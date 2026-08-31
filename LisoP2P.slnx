@@ -3,5 +3,6 @@
   <Project Path="LisoP2P.Core/LisoP2P.Core.csproj" />
   <Project Path="LisoP2P.Media/LisoP2P.Media.csproj" />
   <Project Path="LisoP2P.Net/LisoP2P.Net.csproj" />
+  <Project Path="LisoP2P.Storage/LisoP2P.Storage.csproj" />
   <Project Path="LisoP2P.Tests/LisoP2P.Tests.csproj" />
 </Solution>
