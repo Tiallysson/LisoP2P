@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using LisoP2P.App.ViewModels;
 using LisoP2P.Core;
@@ -19,7 +20,7 @@ public partial class App : Application
 
         var services = new ServiceCollection();
         services.AddSingleton(options);
-        services.AddSingleton<IIdentityStore, FileIdentityStore>();
+        services.AddSingleton<IIdentityStore>(_ => new FileIdentityStore(GetIdentityDirectory(options)));
         services.AddSingleton<IDiscoveryService, DiscoveryService>();
         services.AddSingleton<ManualPeerConnector>();
         services.AddSingleton<MainViewModel>();
@@ -40,6 +41,14 @@ public partial class App : Application
         }
 
         base.OnExit(e);
+    }
+
+    private static string GetIdentityDirectory(NetworkOptions options)
+    {
+        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LisoP2P");
+        return options.SessionPort == NetworkOptions.DefaultSessionPort
+            ? root
+            : Path.Combine(root, options.SessionPort.ToString());
     }
 
     private static NetworkOptions ParseNetworkOptions(string[] args)
