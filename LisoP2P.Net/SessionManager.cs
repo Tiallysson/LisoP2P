@@ -107,7 +107,7 @@ public sealed class SessionManager : ISessionManager
     /// smaller keeps the connection it initiated; the other side closes its. Both peers
     /// apply the same rule, so they converge without negotiation.
     /// </summary>
-    private async Task RegisterSessionAsync(IPeerSession session, bool isOutbound)
+    internal async Task RegisterSessionAsync(IPeerSession session, bool isOutbound)
     {
         var key = session.RemoteId.Value;
         var keepOutbound = _identity.Id.Value.CompareTo(key) < 0;
