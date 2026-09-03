@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-**Fase 3** (of 6 planned phases) is implemented: fase 0 (scaffold, peer identity, wire protocol,
+**Fase 4** (of 6 planned phases) is implemented: fase 0 (scaffold, peer identity, wire protocol,
 UDP broadcast discovery, manual-connect fallback), fase 1 (TCP session with handshake/keepalive/
 reconnect, 1:1 chat with SQLite history), fase 2 (DXGI screen capture, H.264 encode, capture
-test window) and fase 3 (fragmented UDP media transport, H.264 decode, 1:1 screen sharing wired
-into the conversation window). No audio yet.
+test window), fase 3 (fragmented UDP media transport, H.264 decode, 1:1 screen sharing wired
+into the conversation window) and fase 4 (WASAPI capture, Opus, jitter buffer, push-to-talk
+voice on the same media socket).
 
 `LisoP2P.App/Docs/fase0-prompt.md` is the original Portuguese specification for the first phase
-(`fase1-prompt.md` through `fase3-prompt.md` cover the later ones). It
+(`fase1-prompt.md` through `fase4-prompt.md` cover the later ones). It
 names project prefixes as `P2PChat.*` and targets `net8.0` — this repo instead kept the
 `LisoP2P.*` prefix and targets `net10.0`/`net10.0-windows` (explicit choices made when starting
 implementation, since the scaffold already used net10.0). Everything else in the spec was
@@ -26,20 +27,24 @@ Five projects, referenced as `Media → Core`, `Net → Core, Media`, `App → C
   `FileIdentityStore`, `DiscoveredPeer`, and the `Protocol/` namespace: `Envelope`, `MessageType`,
   `AnnouncePayload`, and their MessagePack codecs (`ProtocolCodec`, `AnnouncePayloadCodec`),
   plus the media wire format: `MediaPacketHeader` / `MediaPacketCodec` (fixed 13-byte binary
-  header, no MessagePack) and `ScreenSharePayload` / `ScreenSharePayloadCodec`.
+  header, no MessagePack), `ScreenSharePayload` / `ScreenSharePayloadCodec` and
+  `VoicePayload` / `VoicePayloadCodec`.
 - **`LisoP2P.Net`** — `NetworkOptions`, `IDiscoveryService` / `DiscoveryService` (UDP broadcast
   discovery), `BroadcastAddressCalculator`, `ManualPeerConnector` (unicast fallback),
   `PeerSession` / `SessionManager`, and the media path: `IMediaSender` / `UdpMediaSender`,
-  `IMediaReceiver` / `UdpMediaReceiver`, `FrameReassembler`, `IScreenShareSession` /
-  `ScreenShareSession`.
+  `IMediaReceiver` / `UdpMediaReceiver`, `FrameReassembler`, `IJitterBuffer` / `JitterBuffer`,
+  `IScreenShareSession` / `ScreenShareSession`, `IVoiceSession` / `VoiceSession`.
 - **`LisoP2P.Media`** — `IScreenCapture` / `DxgiScreenCapture` (Desktop Duplication),
   `TextureConverter` (BGRA→NV12, downscale to the target resolution and preview scaling on the
   D3D11 VideoProcessor), `IVideoEncoder` / `MediaFoundationH264Encoder` / `VideoEncoderFactory`
   (hardware MFT first, software MFT fallback), `ICapturePipeline` / `CapturePipeline`,
   `LatestFrameSlot`, `IEncodedFrameWriter` with `Mp4FileWriter` (default) and `AnnexBFileWriter`,
   `AnnexB`, plus the receive side: `IVideoDecoder` / `MediaFoundationH264Decoder` /
-  `VideoDecoderFactory` and `Nv12Converter` (NV12→BGRA on the CPU). Depends on
-  `Vortice.Direct3D11` and `Vortice.MediaFoundation`.
+  `VideoDecoderFactory` and `Nv12Converter` (NV12→BGRA on the CPU), plus audio:
+  `IAudioCapture` / `WasapiAudioCapture`, `IAudioPlayback` / `WasapiAudioPlayback`,
+  `IAudioDeviceCatalog` / `WasapiAudioDeviceCatalog`, `IAudioEncoder` / `OpusAudioEncoder`,
+  `IAudioDecoder` / `OpusAudioDecoder`, `AudioResampler`, `AudioFrameAccumulator`. Depends on
+  `Vortice.Direct3D11`, `Vortice.MediaFoundation`, `NAudio.Wasapi` and `Concentus`.
 - **`LisoP2P.App`** (wpf, `net10.0-windows`) — WPF/MVVM UI (`CommunityToolkit.Mvvm`), composed via
   `Microsoft.Extensions.DependencyInjection` in `App.xaml.cs` (no separate DI framework).
 - **`LisoP2P.Tests`** (xunit) — codec round-trip/malformed-input coverage, identity persistence,
@@ -110,6 +115,22 @@ Design points worth knowing before touching this code:
   colors and the picture comes out green.
 - The decoder rotates three BGRA output buffers: the UI thread copies one into the
   `WriteableBitmap` while the decode thread already writes the next.
+- Audio shares the video UDP socket, split by `MediaPacketCodec` `StreamId` (0 video, 1 audio).
+  Audio skips fragment reassembly entirely — an Opus voice frame fits in one datagram — and an
+  audio packet claiming several fragments is dropped.
+- Audio is always 48 kHz mono in 960-sample (20 ms) frames before the encoder, whatever the
+  device delivers; `AudioFrameAccumulator` re-frames the driver's arbitrary block sizes.
+- `JitterBuffer` rules, in order of importance: `Pull` is called every 20 ms unconditionally, a
+  missing frame becomes Opus PLC instead of a wait, a packet later than its played slot is
+  discarded, depth is capped at 7 frames (140 ms) with the oldest dropped so a recovered network
+  does not leave a permanent delay, and 25 concealed frames with nothing arriving means going
+  silent and re-buffering.
+- Push-to-talk starts and stops the capture device, not just the sending — releasing the key must
+  stop capture and encode, and the acceptance test checks that the encoder is not running.
+- `NAudio.Wasapi` is referenced directly rather than the `NAudio` metapackage: the metapackage
+  only ships WASAPI for `-windows` target frameworks, and Media must stay plain `net10.0`. The
+  WASAPI classes carry `[SupportedOSPlatform("windows")]` to keep CA1416 quiet at their call
+  sites.
 - `DxgiScreenCapture` releases each duplication frame (`ReleaseFrame`) right after `CopyResource`
   into its own texture, before raising `FrameCaptured`. Holding the frame longer stalls the whole
   duplication API. `WaitTimeout` is a normal idle screen, not an error; `AccessLost` (Win+L, UAC,
@@ -167,7 +188,8 @@ Manual acceptance test (see README.md): run two instances with distinct `--sessi
 and confirm they discover each other within a few seconds and drop each other within 8 seconds of
 one closing. This has been manually verified working end-to-end.
 
-The fase 3 acceptance list (share appears within 2 s, movement stays fluid, recovery after 5 s
-of network loss, joining an ongoing share, 10 minutes with stable memory) needs two machines on
-LAN and on Radmin VPN, and has **not** been run yet — only a two-instance startup smoke check
-that both media sockets bind.
+The fase 3 and fase 4 acceptance lists (share appears within 2 s, movement stays fluid, recovery
+after 5 s of network loss, joining an ongoing share, 10 minutes with stable memory; PTT audible
+under 300 ms, voice plus screen without either degrading, recovery after a 2-3 s network cut,
+device switch mid-call) need two machines on LAN and on Radmin VPN, and have **not** been run
+yet — only a two-instance startup smoke check.

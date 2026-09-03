@@ -3,12 +3,12 @@
 App de comunicação P2P para Windows, estilo Discord, que conecta máquinas
 diretamente pela LAN (real ou virtual via Radmin VPN), sem servidor central.
 
-Este repositório está na **fase 3 de 6**: solution, protocolo de mensagens,
+Este repositório está na **fase 4 de 6**: solution, protocolo de mensagens,
 descoberta de peers na rede, sessão TCP 1:1, chat de texto com histórico local,
-captura de tela com encode H.264 e **transmissão de tela 1:1** — o vídeo sai de
-uma máquina e aparece na outra. Áudio vem nas fases seguintes — veja
-`fase0-prompt.md` a `fase3-prompt.md` em `LisoP2P.App/Docs/` para as
-especificações completas de cada fase.
+captura de tela com encode H.264, transmissão de tela 1:1 e **voz** (microfone
+e/ou som do sistema, Opus, push-to-talk). Veja `fase0-prompt.md` a
+`fase4-prompt.md` em `LisoP2P.App/Docs/` para as especificações completas de
+cada fase.
 
 ## Estrutura
 
@@ -17,15 +17,19 @@ especificações completas de cada fase.
 - `LisoP2P.Net` — descoberta de peers via broadcast UDP, conector manual,
   sessão TCP 1:1 (`PeerSession`/`SessionManager`) com handshake, keepalive e
   reconexão automática, transporte de mídia por UDP (`UdpMediaSender`,
-  `UdpMediaReceiver`, `FrameReassembler`) e a orquestração do
-  compartilhamento (`ScreenShareSession`).
+  `UdpMediaReceiver`, `FrameReassembler`), jitter buffer de áudio
+  (`JitterBuffer`) e a orquestração de tela e voz (`ScreenShareSession`,
+  `VoiceSession`).
 - `LisoP2P.Storage` — histórico de chat em SQLite (`IChatStore`).
 - `LisoP2P.Media` — captura de tela via DXGI Desktop Duplication
   (`DxgiScreenCapture`), conversão BGRA→NV12 na GPU (`TextureConverter`,
   D3D11 VideoProcessor), encode H.264 via Media Foundation
   (`MediaFoundationH264Encoder`, `VideoEncoderFactory`), decode H.264 de volta
   para BGRA (`MediaFoundationH264Decoder`, `VideoDecoderFactory`,
-  `Nv12Converter`) e o pipeline que junta captura e encode (`CapturePipeline`).
+  `Nv12Converter`), o pipeline que junta captura e encode (`CapturePipeline`) e
+  o áudio: captura WASAPI (`WasapiAudioCapture`), playback (`WasapiAudioPlayback`),
+  codec Opus (`OpusAudioEncoder`/`OpusAudioDecoder`) e normalização de amostras
+  (`AudioResampler`, `AudioFrameAccumulator`).
 - `LisoP2P.App` — interface WPF (MVVM).
 - `LisoP2P.Tests` — testes de unidade (xUnit).
 
@@ -318,9 +322,88 @@ cores e a imagem sai esverdeada.
   descarte local do `CapturePipeline`, herdado da fase 2.
 - Sem áudio.
 
+## Voz (fase 4)
+
+Com a conversa conectada, o botão de microfone no cabeçalho abre a voz com
+aquele peer. **Voz não depende de compartilhamento de tela** — uma chamada só
+de áudio funciona sozinha, e o contrário também: dá para compartilhar a tela
+sem abrir a voz.
+
+### Push-to-talk
+
+O padrão é **push-to-talk**: segurar a tecla escolhida transmite, soltar
+para. A tecla é selecionável na barra de áudio (Ctrl — o padrão —, Alt, Shift
+ou Espaço). Com "Espaço" escolhido, a tecla é ignorada enquanto o cursor está
+na caixa de mensagem, senão digitar transmitiria. Perder o foco da janela solta
+o PTT, para a tecla não ficar "presa" apertada.
+
+Segurar a tecla **liga o dispositivo de captura**; soltar desliga. Enquanto o
+PTT está solto nada é capturado e nada é codificado — não é só o envio que
+para. A caixa "Voz aberta" troca o PTT por microfone sempre ligado.
+
+Os pontos coloridos ao lado dos botões mostram quem está falando: o verde é
+você transmitindo, o azul é o peer (baseado em pacotes de áudio chegando).
+
+### Um socket de mídia, dois streams
+
+O áudio **não abre socket novo**: viaja no mesmo UDP da fase 3 (47102 por
+padrão), multiplexado pelo campo `StreamId` do cabeçalho de pacote — `0` é
+vídeo, `1` é áudio. Manter dois sockets sincronizados na mão dá mais trabalho
+que multiplexar um.
+
+O caminho de recepção é diferente por stream. Vídeo continua na remontagem por
+`FrameId`; áudio vai direto para o jitter buffer, porque um frame Opus de voz
+cabe inteiro num pacote UDP (dezenas de bytes) — não há fragmentação a
+resolver. Pacote de áudio que se diz fragmentado é descartado.
+
+Formato: **48 kHz mono, frames de 960 amostras (20 ms)**, Opus em modo VoIP a
+24 kbps com FEC in-band. O que o dispositivo entregar (estéreo, 44,1 kHz) é
+convertido antes do encode. O `VoiceStart` (tipo 50) leva taxa, canais e
+tamanho de frame pela sessão TCP, e é com isso que o outro lado monta o
+decoder; `VoiceStop` é 51.
+
+### Jitter buffer
+
+É o núcleo da fase — é o que faz a voz soar contínua apesar de UDP chegando em
+intervalos irregulares. As regras importam mais que o tamanho:
+
+- segura **3 frames (60 ms)** antes de começar a tocar, para absorver jitter
+  normal sem latência perceptível demais;
+- o playback chama `Pull()` a cada 20 ms **incondicionalmente** — rede ruim
+  degrada, não trava;
+- frame que não chegou vira **PLC do próprio Opus** e a expectativa avança.
+  Esperar voz atrasada é pior que um gap disfarçado;
+- pacote que chega depois do seu lugar já ter tocado é descartado: playback não
+  volta no tempo;
+- profundidade é limitada a **7 frames (140 ms)**; além disso os mais antigos
+  são jogados fora e o playback pula à frente. Sem isso, uma rede que travou
+  por 3 segundos voltaria tocando o acúmulo, e a chamada ficaria atrasada para
+  sempre;
+- depois de 25 frames ocultados sem nada chegar, ele silencia e volta a
+  bufferizar em vez de gerar PLC eternamente.
+
+Tudo isso é testado sem hardware de áudio: o buffer recebe um decoder falso e
+sequências construídas à mão.
+
+### Limitações conhecidas
+
+- 1:1, um par por vez. Vários participantes de voz e mixagem entre eles são
+  fase 5 em diante.
+- Sem cancelamento de eco e sem detecção de atividade de voz (VAD) — é por isso
+  que o PTT é o padrão. Em "voz aberta" com caixas de som, o peer pode ouvir o
+  retorno do próprio áudio.
+- Sem RTCP: não há feedback de taxa do receptor, nem para vídeo nem para voz.
+- A porta de mídia aceita áudio de qualquer origem enquanto a chamada está
+  ativa; o filtro por endereço existente é usado pelo vídeo. Em escopo 1:1 na
+  LAN isso não é um problema prático, mas não é uma autenticação.
+
 ## Dependências
 
 - `Vortice.Direct3D11` / `Vortice.MediaFoundation` (bindings DXGI/D3D11/MF).
+- `NAudio.Wasapi` (captura e playback WASAPI) e `Concentus` (Opus em C# puro,
+  sem DLL nativa extra). É o pacote `NAudio.Wasapi` e não o `NAudio` completo
+  porque o metapacote só entrega WASAPI em target `-windows`, e `LisoP2P.Media`
+  precisa continuar em `net10.0` puro.
 - `MessagePack`, `Microsoft.Data.Sqlite`, `CommunityToolkit.Mvvm`,
   `MaterialDesignThemes`.
 
@@ -360,7 +443,7 @@ dotnet test
   `--discovery-port`.
 - **47101/TCP** — sessão 1:1 (handshake, chat, keepalive, controle de
   compartilhamento), configurável via `--session-port`.
-- **47102/UDP** — vídeo da transmissão de tela, configurável via
+- **47102/UDP** — vídeo (`StreamId` 0) e voz (`StreamId` 1), configurável via
   `--media-port` (por padrão, `--session-port + 1` quando a porta de sessão
   não é a padrão).
 
