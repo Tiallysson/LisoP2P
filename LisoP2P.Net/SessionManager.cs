@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using LisoP2P.Core;
+using LisoP2P.Core.Protocol;
 
 namespace LisoP2P.Net;
 
@@ -27,6 +28,39 @@ public sealed class SessionManager : ISessionManager
         _options = options;
         _identity = identity;
         _discovery = discovery;
+        _identity.NicknameChanged += OnNicknameChanged;
+    }
+
+    private void OnNicknameChanged(string nickname)
+    {
+        var envelope = new Envelope
+        {
+            Version = ProtocolCodec.CurrentVersion,
+            Type = MessageType.NicknameUpdate,
+            SenderId = _identity.Id.Value,
+            TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Payload = HelloPayloadCodec.Encode(new HelloPayload
+            {
+                Nickname = nickname,
+                ProtocolVersion = HelloPayloadCodec.CurrentProtocolVersion,
+            }),
+        };
+
+        foreach (var (session, _) in _sessions.Values)
+        {
+            _ = SendQuietlyAsync(session, envelope);
+        }
+    }
+
+    private static async Task SendQuietlyAsync(IPeerSession session, Envelope envelope)
+    {
+        try
+        {
+            await session.SendAsync(envelope, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+        }
     }
 
     public Task StartListeningAsync(CancellationToken ct)
@@ -180,6 +214,7 @@ public sealed class SessionManager : ISessionManager
 
     public async ValueTask DisposeAsync()
     {
+        _identity.NicknameChanged -= OnNicknameChanged;
         _cts?.Cancel();
         _listener?.Stop();
 

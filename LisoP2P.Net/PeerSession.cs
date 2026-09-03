@@ -37,6 +37,7 @@ public sealed class PeerSession : IPeerSession
 
     public event Action<SessionState>? StateChanged;
     public event Action<Envelope>? MessageReceived;
+    public event Action<string>? RemoteNicknameChanged;
 
     private PeerSession(IIdentityStore identity, IDiscoveryService? discovery, Connector? connector)
     {
@@ -233,7 +234,7 @@ public sealed class PeerSession : IPeerSession
                     return false;
                 }
 
-                RemoteNickname = payload.Nickname;
+                RemoteNickname = ResolveNickname(payload.Nickname, RemoteId);
                 return true;
             }
             else
@@ -256,7 +257,7 @@ public sealed class PeerSession : IPeerSession
                 }
 
                 RemoteId = new PeerId(hello.SenderId);
-                RemoteNickname = payload.Nickname;
+                RemoteNickname = ResolveNickname(payload.Nickname, RemoteId);
 
                 await SendHandshakeEnvelopeAsync(stream, MessageType.HelloAck, timeoutCts.Token).ConfigureAwait(false);
                 return true;
@@ -322,6 +323,9 @@ public sealed class PeerSession : IPeerSession
                     RoundTripTime = TimeSpan.FromMilliseconds(Math.Max(0, nowMs - envelope.TimestampUnixMs));
                     _lastPongAt = DateTimeOffset.UtcNow;
                     break;
+                case MessageType.NicknameUpdate:
+                    HandleNicknameUpdate(envelope);
+                    break;
                 case MessageType.Disconnect:
                     return;
                 default:
@@ -329,6 +333,30 @@ public sealed class PeerSession : IPeerSession
                     break;
             }
         }
+    }
+
+    private void HandleNicknameUpdate(Envelope envelope)
+    {
+        if (!HelloPayloadCodec.TryDecode(envelope.Payload, out var payload) || payload is null)
+        {
+            return;
+        }
+
+        var nickname = ResolveNickname(payload.Nickname, RemoteId);
+
+        if (string.Equals(nickname, RemoteNickname, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        RemoteNickname = nickname;
+        RemoteNicknameChanged?.Invoke(nickname);
+    }
+
+    private static string ResolveNickname(string? value, PeerId id)
+    {
+        var sanitized = NicknameRules.Sanitize(value);
+        return sanitized.Length > 0 ? sanitized : NicknameRules.FallbackFor(id);
     }
 
     private async Task WriteLoopAsync(CancellationToken ct)

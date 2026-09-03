@@ -12,6 +12,7 @@ public interface IPeerSession : IAsyncDisposable
 
     event Action<SessionState>? StateChanged;
     event Action<Envelope>? MessageReceived;
+    event Action<string>? RemoteNicknameChanged;
 
     Task SendAsync(Envelope envelope, CancellationToken ct);
 }
