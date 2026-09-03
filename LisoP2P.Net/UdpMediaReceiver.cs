@@ -22,6 +22,7 @@ public sealed class UdpMediaReceiver : IMediaReceiver
 
     public event Action<DecodableFrame>? FrameReassembled;
     public event Action? FrameDropped;
+    public event Action<uint, byte[]>? AudioPacketReceived;
 
     public UdpMediaReceiver()
     {
@@ -80,10 +81,22 @@ public sealed class UdpMediaReceiver : IMediaReceiver
                 continue;
             }
 
-            if (MediaPacketCodec.TryDecode(result.Buffer, out var header, out var payload))
+            if (!MediaPacketCodec.TryDecode(result.Buffer, out var header, out var payload))
             {
-                _reassembler.Add(header, payload);
+                continue;
             }
+
+            if (header.StreamId == MediaPacketCodec.AudioStreamId)
+            {
+                if (header.FragmentCount == 1)
+                {
+                    AudioPacketReceived?.Invoke(header.FrameId, payload.ToArray());
+                }
+
+                continue;
+            }
+
+            _reassembler.Add(header, payload);
         }
     }
 

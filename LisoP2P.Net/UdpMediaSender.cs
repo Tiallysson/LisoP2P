@@ -12,11 +12,53 @@ public sealed class UdpMediaSender : IMediaSender
     private readonly object _sync = new();
 
     private uint _frameId;
+    private uint _audioSequence;
     private bool _disposed;
 
     public uint FramesSent { get; private set; }
+    public uint AudioPacketsSent { get; private set; }
     public long BytesSent { get; private set; }
     public int DroppedFrames { get; private set; }
+
+    public void SendAudio(ReadOnlySpan<byte> opusData, IPEndPoint destination)
+    {
+        if (_disposed || opusData.Length == 0 || opusData.Length > MediaPacketCodec.MaxPayloadSize)
+        {
+            return;
+        }
+
+        lock (_sync)
+        {
+            var header = new MediaPacketHeader(
+                MediaPacketCodec.CurrentVersion,
+                MediaPacketCodec.AudioStreamId,
+                unchecked(_audioSequence++),
+                0,
+                1,
+                0,
+                (ushort)opusData.Length);
+
+            var buffer = ArrayPool<byte>.Shared.Rent(MediaPacketCodec.MaxPacketSize);
+
+            try
+            {
+                var written = MediaPacketCodec.Encode(buffer, header, opusData);
+                _socket.SendTo(buffer.AsSpan(0, written), SocketFlags.None, destination);
+                BytesSent += written;
+                AudioPacketsSent++;
+            }
+            catch (SocketException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+    }
 
     public void SendFrame(EncodedFrame frame, IPEndPoint destination)
     {

@@ -11,6 +11,7 @@ public interface IMediaReceiver : IAsyncDisposable
 
     event Action<DecodableFrame>? FrameReassembled;
     event Action? FrameDropped;
+    event Action<uint, byte[]>? AudioPacketReceived;
 
     Task StartAsync(int mediaPort, CancellationToken ct);
     void Reset();
