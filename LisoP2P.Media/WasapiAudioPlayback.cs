@@ -1,8 +1,10 @@
+using System.Runtime.Versioning;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
 namespace LisoP2P.Media;
 
+[SupportedOSPlatform("windows")]
 public sealed class WasapiAudioPlayback : IAudioPlayback
 {
     private const int LatencyMilliseconds = 60;

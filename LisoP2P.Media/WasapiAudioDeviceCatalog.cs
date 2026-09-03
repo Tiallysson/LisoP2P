@@ -1,7 +1,9 @@
+using System.Runtime.Versioning;
 using NAudio.CoreAudioApi;
 
 namespace LisoP2P.Media;
 
+[SupportedOSPlatform("windows")]
 public sealed class WasapiAudioDeviceCatalog : IAudioDeviceCatalog
 {
     public IReadOnlyList<AudioDeviceInfo> GetInputDevices() => Enumerate(DataFlow.Capture);

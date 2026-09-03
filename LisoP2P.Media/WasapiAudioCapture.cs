@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using NAudio.CoreAudioApi;
@@ -5,6 +6,7 @@ using NAudio.Wave;
 
 namespace LisoP2P.Media;
 
+[SupportedOSPlatform("windows")]
 public sealed class WasapiAudioCapture : IAudioCapture
 {
     private const int MaxQueuedSecondaryFrames = 10;
