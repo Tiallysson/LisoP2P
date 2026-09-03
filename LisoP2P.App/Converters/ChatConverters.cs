@@ -39,10 +39,28 @@ public sealed class BoolToAlignmentConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+public sealed class InverseBoolConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is not true;
+
+    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is not true;
+}
+
 public sealed class DeliveredTextConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         value is true ? "entregue" : "pendente";
+
+    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+public sealed class EmptyToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        string.IsNullOrWhiteSpace(value as string) ? Visibility.Collapsed : Visibility.Visible;
 
     public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();

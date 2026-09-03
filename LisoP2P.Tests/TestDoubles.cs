@@ -6,7 +6,15 @@ namespace LisoP2P.Tests;
 internal sealed class StubIdentityStore(Guid id, string nickname) : IIdentityStore
 {
     public PeerId Id { get; } = new(id);
-    public string Nickname { get; } = nickname;
+    public string Nickname { get; private set; } = nickname;
+
+    public event Action<string>? NicknameChanged;
+
+    public void SetNickname(string value)
+    {
+        Nickname = value;
+        NicknameChanged?.Invoke(value);
+    }
 }
 
 internal sealed class FakeDiscoveryService : IDiscoveryService

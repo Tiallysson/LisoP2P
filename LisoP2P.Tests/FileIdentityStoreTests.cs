@@ -25,6 +25,46 @@ public class FileIdentityStoreTests : IDisposable
         Assert.Equal(first.Nickname, second.Nickname);
     }
 
+    [Fact]
+    public void SetNickname_PersistsAndKeepsTheSameId()
+    {
+        var store = new FileIdentityStore(_directory);
+        var id = store.Id;
+
+        store.SetNickname("  Nome   Escolhido ");
+
+        Assert.Equal("Nome Escolhido", store.Nickname);
+
+        var reloaded = new FileIdentityStore(_directory);
+
+        Assert.Equal(id, reloaded.Id);
+        Assert.Equal("Nome Escolhido", reloaded.Nickname);
+    }
+
+    [Fact]
+    public void SetNickname_RaisesChangedOnlyWhenTheValueChanges()
+    {
+        var store = new FileIdentityStore(_directory);
+        var changes = new List<string>();
+        store.NicknameChanged += changes.Add;
+
+        store.SetNickname("alfa");
+        store.SetNickname("alfa");
+        store.SetNickname("beta");
+
+        Assert.Equal(["alfa", "beta"], changes);
+    }
+
+    [Fact]
+    public void SetNickname_RejectsEmptyValue()
+    {
+        var store = new FileIdentityStore(_directory);
+        var original = store.Nickname;
+
+        Assert.Throws<ArgumentException>(() => store.SetNickname("   "));
+        Assert.Equal(original, store.Nickname);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

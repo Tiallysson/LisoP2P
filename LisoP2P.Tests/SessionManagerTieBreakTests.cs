@@ -18,6 +18,7 @@ public class SessionManagerTieBreakTests
 #pragma warning disable CS0067
         public event Action<SessionState>? StateChanged;
         public event Action<Envelope>? MessageReceived;
+        public event Action<string>? RemoteNicknameChanged;
 #pragma warning restore CS0067
 
         public Task SendAsync(Envelope envelope, CancellationToken ct) => Task.CompletedTask;
