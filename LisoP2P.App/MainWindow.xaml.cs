@@ -1,25 +1,44 @@
+using LisoP2P.App.ViewModels;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Threading;
-using LisoP2P.App.ViewModels;
 
 namespace LisoP2P.App;
 
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
+    private readonly Func<CaptureTestWindow> _captureWindowFactory;
     private ChatViewModel? _boundChat;
+    private CaptureTestWindow? _captureWindow;
     private bool _userScrolledUp;
 
-    public MainWindow(MainViewModel viewModel)
+    public MainWindow(MainViewModel viewModel, Func<CaptureTestWindow> captureWindowFactory)
     {
         InitializeComponent();
         DataContext = viewModel;
         _viewModel = viewModel;
+        _captureWindowFactory = captureWindowFactory;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OpenCaptureTest_Click(object sender, RoutedEventArgs e)
+    {
+        if (_captureWindow is not null)
+        {
+            _captureWindow.Activate();
+            return;
+        }
+
+        _captureWindow = _captureWindowFactory();
+        _captureWindow.Owner = this;
+        _captureWindow.Closed += (_, _) => _captureWindow = null;
+        _captureWindow.Show();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -87,5 +106,29 @@ public partial class MainWindow : Window
         {
             _viewModel.ActiveChat.SendCommand.Execute(null);
         }
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+    IntPtr hwnd,
+    int dwAttribute,
+    ref int pvAttribute,
+    int cbAttribute);
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+
+        var hwnd = new WindowInteropHelper(this).Handle;
+
+        const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
+        int useDarkMode = 1;
+
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            ref useDarkMode,
+            sizeof(int));
     }
 }

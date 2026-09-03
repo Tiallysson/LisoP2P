@@ -1,0 +1,123 @@
+<Window x:Class="LisoP2P.App.CaptureTestWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:conv="clr-namespace:LisoP2P.App.Converters"
+        xmlns:vm="clr-namespace:LisoP2P.App.ViewModels"
+        mc:Ignorable="d"
+        Title="Teste de captura" Height="760" Width="1180" MinWidth="900" MinHeight="560"
+        Background="#FF252526">
+    <Window.Resources>
+        <conv:InverseBoolConverter x:Key="InverseBoolConverter" />
+    </Window.Resources>
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="160" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <TextBlock Text="Monitor" Foreground="White" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ComboBox Width="280"
+                      ItemsSource="{Binding Monitors}"
+                      SelectedItem="{Binding SelectedMonitor, Mode=TwoWay}"
+                      DisplayMemberPath="DeviceName"
+                      VerticalAlignment="Center" />
+
+            <Button Content="Iniciar"
+                    Command="{Binding StartCommand}"
+                    Margin="12,0,0,0"
+                    Padding="14,6"
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBoolConverter}}" />
+
+            <Button Content="Parar"
+                    Command="{Binding StopCommand}"
+                    Margin="8,0,0,0"
+                    Padding="14,6"
+                    IsEnabled="{Binding IsRunning}" />
+
+            <Button Content="Forçar keyframe"
+                    Command="{Binding ForceKeyframeCommand}"
+                    Margin="8,0,0,0"
+                    Padding="14,6"
+                    IsEnabled="{Binding IsRunning}" />
+
+            <Button Content="Abrir log"
+                    Command="{Binding OpenLogFolderCommand}"
+                    Margin="8,0,0,0"
+                    Padding="14,6" />
+
+            <Button Content="Abrir gravação"
+                    Command="{Binding OpenRecordingCommand}"
+                    Margin="8,0,0,0"
+                    Padding="14,6" />
+
+            <CheckBox Content="Forçar software"
+                      IsChecked="{Binding ForceSoftwareEncoder, Mode=TwoWay}"
+                      Foreground="White"
+                      VerticalAlignment="Center"
+                      Margin="16,0,0,0"
+                      IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBoolConverter}}" />
+
+            <CheckBox Content="Gravar em arquivo"
+                      IsChecked="{Binding RecordToFile, Mode=TwoWay}"
+                      Foreground="White"
+                      VerticalAlignment="Center"
+                      Margin="16,0,0,0"
+                      IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBoolConverter}}" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10"
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBoolConverter}}">
+            <TextBlock Text="Resolução" Foreground="White" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ComboBox Width="120"
+                      ItemsSource="{x:Static vm:CaptureTestViewModel.ResolutionOptions}"
+                      SelectedItem="{Binding SelectedResolution, Mode=TwoWay}"
+                      DisplayMemberPath="Label"
+                      VerticalAlignment="Center" />
+
+            <TextBlock Text="FPS" Foreground="White" VerticalAlignment="Center" Margin="16,0,8,0" />
+            <ComboBox Width="80"
+                      ItemsSource="{x:Static vm:CaptureTestViewModel.FpsOptions}"
+                      SelectedItem="{Binding TargetFps, Mode=TwoWay}"
+                      VerticalAlignment="Center" />
+
+            <TextBlock Text="Bitrate (kbps)" Foreground="White" VerticalAlignment="Center" Margin="16,0,8,0" />
+            <TextBox Width="90"
+                     Text="{Binding BitrateKbps, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     VerticalAlignment="Center" />
+
+            <TextBlock Text="Prévia" Foreground="White" VerticalAlignment="Center" Margin="16,0,8,0" />
+            <ComboBox Width="140"
+                      ItemsSource="{x:Static vm:CaptureTestViewModel.PreviewOptions}"
+                      SelectedItem="{Binding SelectedPreview, Mode=TwoWay}"
+                      DisplayMemberPath="Label"
+                      VerticalAlignment="Center" />
+        </StackPanel>
+
+        <Border Grid.Row="2" Background="Black" CornerRadius="4">
+            <Image Source="{Binding Preview}"
+                   Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="HighQuality"
+                   SnapsToDevicePixels="True" />
+        </Border>
+
+        <StackPanel Grid.Row="3" Margin="0,10,0,6">
+            <TextBlock Text="{Binding StatsText}" Foreground="White" FontFamily="Consolas" />
+            <TextBlock Text="{Binding EncoderText}" Foreground="Gray" FontFamily="Consolas" Margin="0,4,0,0" />
+            <TextBlock Text="{Binding LogFileText}" Foreground="Gray" FontFamily="Consolas" FontSize="11" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <ListBox Grid.Row="4"
+                 ItemsSource="{Binding LogMessages}"
+                 Background="#FF1E1E1E"
+                 Foreground="#FFD0D0D0"
+                 BorderThickness="0"
+                 FontFamily="Consolas"
+                 FontSize="11" />
+    </Grid>
+</Window>
