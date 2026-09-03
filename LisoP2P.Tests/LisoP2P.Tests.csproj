@@ -22,6 +22,7 @@
     <ProjectReference Include="..\LisoP2P.Core\LisoP2P.Core.csproj" />
     <ProjectReference Include="..\LisoP2P.Net\LisoP2P.Net.csproj" />
     <ProjectReference Include="..\LisoP2P.Storage\LisoP2P.Storage.csproj" />
+    <ProjectReference Include="..\LisoP2P.Media\LisoP2P.Media.csproj" />
   </ItemGroup>
 
 </Project>
