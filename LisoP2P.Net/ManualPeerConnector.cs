@@ -13,6 +13,7 @@ public sealed class ManualPeerConnector(NetworkOptions options, IIdentityStore i
         {
             Nickname = identity.Nickname,
             SessionPort = options.SessionPort,
+            MediaPort = options.MediaPort,
         };
 
         var envelope = new Envelope

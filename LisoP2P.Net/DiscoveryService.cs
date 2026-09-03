@@ -32,6 +32,8 @@ public sealed class DiscoveryService : IDiscoveryService
         _socket.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
         _socket.Client.Bind(new IPEndPoint(IPAddress.Any, options.DiscoveryPort));
 
+        _identity.NicknameChanged += OnNicknameChanged;
+
         _announceTimer = new Timer(_ => SendBroadcastAnnounce(), null, Timeout.Infinite, Timeout.Infinite);
         _sweepTimer = new Timer(_ => SweepExpiredPeers(), null, Timeout.Infinite, Timeout.Infinite);
     }
@@ -91,6 +93,8 @@ public sealed class DiscoveryService : IDiscoveryService
         }
     }
 
+    private void OnNicknameChanged(string nickname) => SendBroadcastAnnounce();
+
     private void HandleAnnounce(Envelope envelope, IPEndPoint remote)
     {
         if (!AnnouncePayloadCodec.TryDecode(envelope.Payload, out var payload) || payload is null)
@@ -99,6 +103,7 @@ public sealed class DiscoveryService : IDiscoveryService
         }
 
         var id = new PeerId(envelope.SenderId);
+        var nickname = ResolveNickname(payload.Nickname, id);
         var now = DateTimeOffset.UtcNow;
         var isNew = false;
 
@@ -107,13 +112,15 @@ public sealed class DiscoveryService : IDiscoveryService
             _ =>
             {
                 isNew = true;
-                return new DiscoveredPeer(id, payload.Nickname, remote.Address, payload.SessionPort, now);
+                return new DiscoveredPeer(
+                    id, nickname, remote.Address, payload.SessionPort, ResolveMediaPort(payload.MediaPort), now);
             },
             (_, existing) =>
             {
-                existing.Nickname = payload.Nickname;
+                existing.Nickname = nickname;
                 existing.Address = remote.Address;
                 existing.SessionPort = payload.SessionPort;
+                existing.MediaPort = ResolveMediaPort(payload.MediaPort);
                 existing.LastSeen = now;
                 return existing;
             });
@@ -127,6 +134,15 @@ public sealed class DiscoveryService : IDiscoveryService
         {
             PeerUpdated?.Invoke(peer);
         }
+    }
+
+    private static int ResolveMediaPort(int value) =>
+        value is > 0 and <= 65535 ? value : NetworkOptions.DefaultMediaPort;
+
+    private static string ResolveNickname(string? value, PeerId id)
+    {
+        var sanitized = NicknameRules.Sanitize(value);
+        return sanitized.Length > 0 ? sanitized : NicknameRules.FallbackFor(id);
     }
 
     private void HandleGoodbye(Guid senderId)
@@ -162,7 +178,12 @@ public sealed class DiscoveryService : IDiscoveryService
 
     private Envelope BuildAnnounceEnvelope()
     {
-        var payload = new AnnouncePayload { Nickname = _identity.Nickname, SessionPort = _options.SessionPort };
+        var payload = new AnnouncePayload
+        {
+            Nickname = _identity.Nickname,
+            SessionPort = _options.SessionPort,
+            MediaPort = _options.MediaPort,
+        };
         return new Envelope
         {
             Version = ProtocolCodec.CurrentVersion,
@@ -196,6 +217,8 @@ public sealed class DiscoveryService : IDiscoveryService
 
     public async ValueTask DisposeAsync()
     {
+        _identity.NicknameChanged -= OnNicknameChanged;
+
         await _announceTimer.DisposeAsync();
         await _sweepTimer.DisposeAsync();
 

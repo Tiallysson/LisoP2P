@@ -9,9 +9,14 @@ public enum MessageType : byte
     HelloAck = 11,
     Ping = 12,
     Pong = 13,
+    NicknameUpdate = 14,
 
     ChatMessage = 20,
     ChatAck = 21,
 
     Disconnect = 30,
+
+    ScreenShareStart = 40,
+    ScreenShareStop = 41,
+    KeyframeRequest = 42,
 }
