@@ -18,6 +18,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ISessionManager _sessionManager;
     private readonly IChatStore _chatStore;
     private readonly IScreenShareSession _screenShare;
+    private readonly IVoiceSession _voice;
+    private readonly IAudioDeviceCatalog _audioDevices;
     private readonly ICapturePipeline _pipeline;
     private readonly NetworkOptions _options;
 
@@ -49,6 +51,8 @@ public sealed partial class MainViewModel : ObservableObject
         ISessionManager sessionManager,
         IChatStore chatStore,
         IScreenShareSession screenShare,
+        IVoiceSession voice,
+        IAudioDeviceCatalog audioDevices,
         ICapturePipeline pipeline,
         NetworkOptions options)
     {
@@ -58,6 +62,8 @@ public sealed partial class MainViewModel : ObservableObject
         _sessionManager = sessionManager;
         _chatStore = chatStore;
         _screenShare = screenShare;
+        _voice = voice;
+        _audioDevices = audioDevices;
         _pipeline = pipeline;
         _options = options;
         _nickname = identity.Nickname;
@@ -103,7 +109,15 @@ public sealed partial class MainViewModel : ObservableObject
         ActiveChat?.Dispose();
 
         var chat = new ChatViewModel(
-            peerVm.Id, peerVm.Nickname, _chatStore, _sessionManager, _identity, _screenShare, _pipeline);
+            peerVm.Id,
+            peerVm.Nickname,
+            _chatStore,
+            _sessionManager,
+            _identity,
+            _screenShare,
+            _voice,
+            _audioDevices,
+            _pipeline);
         ActiveChat = chat;
 
         await chat.LoadHistoryAsync().ConfigureAwait(false);

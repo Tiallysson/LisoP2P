@@ -192,6 +192,54 @@
                                           Margin="0,0,8,0"
                                           IsChecked="{Binding DebugMode, Mode=TwoWay}" />
 
+                                <Ellipse Width="9"
+                                         Height="9"
+                                         Fill="#FF6AC46A"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,4,0"
+                                         Visibility="{Binding IsTransmittingVoice, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                <TextBlock Text="Falando"
+                                           Foreground="#FF6AC46A"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"
+                                           Visibility="{Binding IsTransmittingVoice, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                <Ellipse Width="9"
+                                         Height="9"
+                                         Fill="#FF9CDCFE"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,4,0"
+                                         Visibility="{Binding IsPeerSpeaking, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                <TextBlock Text="{Binding PeerNickname, StringFormat={}{0} falando}"
+                                           Foreground="#FF9CDCFE"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"
+                                           Visibility="{Binding IsPeerSpeaking, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                <Button Command="{Binding ToggleVoiceCommand}"
+                                        Padding="10,5"
+                                        Margin="0,0,6,0"
+                                        ToolTip="Ativar ou encerrar a voz nesta conversa">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Width="18" Height="18">
+                                            <materialDesign:PackIcon.Style>
+                                                <Style TargetType="materialDesign:PackIcon">
+                                                    <Setter Property="Kind" Value="MicrophoneOff" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsVoiceActive}" Value="True">
+                                                            <Setter Property="Kind" Value="Microphone" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </materialDesign:PackIcon.Style>
+                                        </materialDesign:PackIcon>
+                                    </StackPanel>
+                                </Button>
+
                                 <Button Content="Compartilhar tela"
                                         Command="{Binding ShareScreenCommand}"
                                         Padding="10,5"
@@ -203,6 +251,68 @@
                                         Visibility="{Binding IsSharing, Converter={StaticResource BoolToVisibilityConverter}}" />
                             </StackPanel>
                         </Grid>
+                    </Border>
+
+                    <Border DockPanel.Dock="Top"
+                            Padding="12,6"
+                            Background="#FF232323"
+                            Visibility="{Binding IsVoiceActive, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Entrada"
+                                       Foreground="Gray"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,4,0" />
+                            <ComboBox ItemsSource="{Binding InputDevices}"
+                                      SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}"
+                                      DisplayMemberPath="Name"
+                                      Width="160"
+                                      Margin="0,0,10,0" />
+
+                            <TextBlock Text="Saída"
+                                       Foreground="Gray"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,4,0" />
+                            <ComboBox ItemsSource="{Binding OutputDevices}"
+                                      SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
+                                      DisplayMemberPath="Name"
+                                      Width="160"
+                                      Margin="0,0,10,0" />
+
+                            <TextBlock Text="Fonte"
+                                       Foreground="Gray"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,4,0" />
+                            <ComboBox ItemsSource="{Binding CaptureModes}"
+                                      SelectedItem="{Binding CaptureMode, Mode=TwoWay}"
+                                      Width="120"
+                                      Margin="0,0,10,0" />
+
+                            <CheckBox Content="Voz aberta"
+                                      Foreground="Gray"
+                                      VerticalAlignment="Center"
+                                      Margin="0,0,10,0"
+                                      IsChecked="{Binding OpenMicrophone, Mode=TwoWay}" />
+
+                            <TextBlock Text="PTT"
+                                       Foreground="Gray"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,4,0" />
+                            <ComboBox ItemsSource="{Binding PushToTalkOptions}"
+                                      SelectedItem="{Binding PushToTalk, Mode=TwoWay}"
+                                      DisplayMemberPath="Name"
+                                      Width="90" />
+
+                            <TextBlock Text="{Binding VoiceStatsText}"
+                                       Foreground="#FF9CDCFE"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="12,0,0,0"
+                                       Visibility="{Binding VoiceStatsText, Converter={StaticResource EmptyToVisibilityConverter}}" />
+                        </StackPanel>
                     </Border>
 
                     <Border DockPanel.Dock="Top"

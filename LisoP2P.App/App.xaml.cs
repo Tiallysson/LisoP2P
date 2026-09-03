@@ -15,6 +15,7 @@ public partial class App : Application
     private IDiscoveryService? _discovery;
     private ISessionManager? _sessionManager;
     private IScreenShareSession? _screenShare;
+    private IVoiceSession? _voice;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -36,6 +37,10 @@ public partial class App : Application
         services.AddSingleton<IMediaSender, UdpMediaSender>();
         services.AddSingleton<IMediaReceiver, UdpMediaReceiver>();
         services.AddSingleton<IScreenShareSession, ScreenShareSession>();
+        services.AddSingleton<IAudioCapture, WasapiAudioCapture>();
+        services.AddSingleton<IAudioPlayback, WasapiAudioPlayback>();
+        services.AddSingleton<IAudioDeviceCatalog, WasapiAudioDeviceCatalog>();
+        services.AddSingleton<IVoiceSession, VoiceSession>();
         services.AddSingleton<MainViewModel>();
         services.AddTransient<CaptureTestViewModel>();
         services.AddTransient<CaptureTestWindow>();
@@ -52,6 +57,9 @@ public partial class App : Application
         _screenShare = _services.GetRequiredService<IScreenShareSession>();
         await _screenShare.StartAsync(CancellationToken.None);
 
+        _voice = _services.GetRequiredService<IVoiceSession>();
+        await _voice.StartAsync(CancellationToken.None);
+
         _services.GetRequiredService<MainWindow>().Show();
     }
 
@@ -62,6 +70,11 @@ public partial class App : Application
             await _services.GetRequiredService<ICapturePipeline>().DisposeAsync();
             _services.GetRequiredService<IScreenCapture>().Dispose();
             MediaFoundationRuntime.Shutdown();
+        }
+
+        if (_voice is not null)
+        {
+            await _voice.DisposeAsync();
         }
 
         if (_screenShare is not null)

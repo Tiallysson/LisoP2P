@@ -28,4 +28,5 @@ public interface IVoiceSession : IAsyncDisposable
     Task StartVoiceAsync(PeerId target, AudioSettings settings, CancellationToken ct);
     Task StopVoiceAsync();
     void SetTransmitting(bool transmitting);
+    void UpdateDevices(string? inputDeviceId, string? outputDeviceId, AudioCaptureMode mode);
 }

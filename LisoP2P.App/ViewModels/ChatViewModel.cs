@@ -1,6 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -21,6 +22,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     private readonly ISessionManager _sessionManager;
     private readonly IIdentityStore _identity;
     private readonly IScreenShareSession _screenShare;
+    private readonly IVoiceSession _voice;
+    private readonly IAudioDeviceCatalog _audioDevices;
     private readonly ICapturePipeline _pipeline;
     private readonly DispatcherTimer _headerTimer;
     private IPeerSession? _session;
@@ -31,6 +34,23 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
     public IReadOnlyList<CaptureAdapterInfo> Monitors => _pipeline.AvailableMonitors;
     public bool HasMultipleMonitors => Monitors.Count > 1;
+    public IReadOnlyList<AudioDeviceInfo> InputDevices { get; }
+    public IReadOnlyList<AudioDeviceInfo> OutputDevices { get; }
+
+    public static IReadOnlyList<AudioCaptureMode> CaptureModes { get; } =
+    [
+        AudioCaptureMode.Microphone,
+        AudioCaptureMode.SystemLoopback,
+        AudioCaptureMode.Both,
+    ];
+
+    public static IReadOnlyList<PushToTalkOption> PushToTalkOptions { get; } =
+    [
+        new PushToTalkOption("Ctrl", Key.LeftCtrl),
+        new PushToTalkOption("Alt", Key.LeftAlt),
+        new PushToTalkOption("Shift", Key.LeftShift),
+        new PushToTalkOption("Espaço", Key.Space),
+    ];
 
     [ObservableProperty]
     private string _peerNickname;
@@ -62,6 +82,33 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _videoStatsText = "";
 
+    [ObservableProperty]
+    private bool _isVoiceActive;
+
+    [ObservableProperty]
+    private bool _isTransmittingVoice;
+
+    [ObservableProperty]
+    private bool _isPeerSpeaking;
+
+    [ObservableProperty]
+    private bool _openMicrophone;
+
+    [ObservableProperty]
+    private AudioCaptureMode _captureMode = AudioCaptureMode.Microphone;
+
+    [ObservableProperty]
+    private AudioDeviceInfo? _selectedInputDevice;
+
+    [ObservableProperty]
+    private AudioDeviceInfo? _selectedOutputDevice;
+
+    [ObservableProperty]
+    private PushToTalkOption _pushToTalk = PushToTalkOptions[0];
+
+    [ObservableProperty]
+    private string _voiceStatsText = "";
+
     public ChatViewModel(
         PeerId peerId,
         string nickname,
@@ -69,6 +116,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         ISessionManager sessionManager,
         IIdentityStore identity,
         IScreenShareSession screenShare,
+        IVoiceSession voice,
+        IAudioDeviceCatalog audioDevices,
         ICapturePipeline pipeline)
     {
         _peerId = peerId;
@@ -77,18 +126,125 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _sessionManager = sessionManager;
         _identity = identity;
         _screenShare = screenShare;
+        _voice = voice;
+        _audioDevices = audioDevices;
         _pipeline = pipeline;
         _selectedMonitor = _pipeline.AvailableMonitors.FirstOrDefault();
+
+        InputDevices = _audioDevices.GetInputDevices();
+        OutputDevices = _audioDevices.GetOutputDevices();
+        _selectedInputDevice = InputDevices.FirstOrDefault(device => device.IsDefault) ?? InputDevices.FirstOrDefault();
+        _selectedOutputDevice = OutputDevices.FirstOrDefault(device => device.IsDefault) ?? OutputDevices.FirstOrDefault();
 
         _screenShare.RemoteFrameReady += OnRemoteFrameReady;
         _screenShare.StateChanged += OnScreenShareStateChanged;
         _screenShare.StatsUpdated += OnScreenShareStatsUpdated;
+        _voice.StateChanged += OnVoiceStateChanged;
+        _voice.StatsUpdated += OnVoiceStatsUpdated;
 
         _headerTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(2) };
         _headerTimer.Tick += (_, _) => RefreshHeaderText();
 
         RefreshShareState();
+        RefreshVoiceState();
     }
+
+    [RelayCommand]
+    private async Task ToggleVoiceAsync()
+    {
+        if (IsVoiceActive)
+        {
+            await _voice.StopVoiceAsync();
+            return;
+        }
+
+        try
+        {
+            await _voice.StartVoiceAsync(_peerId, BuildAudioSettings(), CancellationToken.None);
+
+            if (OpenMicrophone)
+            {
+                _voice.SetTransmitting(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Application.Current.Dispatcher.Invoke(() => VoiceStatsText = ex.Message);
+        }
+    }
+
+    public void SetPushToTalk(bool pressed)
+    {
+        if (!IsVoiceActive || OpenMicrophone)
+        {
+            return;
+        }
+
+        _voice.SetTransmitting(pressed);
+    }
+
+    private AudioSettings BuildAudioSettings() => new()
+    {
+        Mode = CaptureMode,
+        InputDeviceId = SelectedInputDevice?.Id,
+        OutputDeviceId = SelectedOutputDevice?.Id,
+    };
+
+    private void OnVoiceStateChanged() => Application.Current.Dispatcher.Invoke(RefreshVoiceState);
+
+    private void RefreshVoiceState()
+    {
+        IsVoiceActive = _voice.IsActive && _voice.Target == _peerId;
+        IsTransmittingVoice = _voice.IsTransmitting;
+        IsPeerSpeaking = _voice.IsPeerSpeaking;
+
+        if (!IsVoiceActive && !_voice.IsReceiving)
+        {
+            VoiceStatsText = "";
+        }
+    }
+
+    private void OnVoiceStatsUpdated(VoiceStats stats)
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            IsPeerSpeaking = _voice.IsPeerSpeaking;
+
+            if (!DebugMode)
+            {
+                return;
+            }
+
+            VoiceStatsText = string.Format(
+                CultureInfo.CurrentCulture,
+                "Voz: buffer {0}   Ocultados: {1}   Atrasados: {2}   Excedente: {3}   Enviados: {4}   Recebidos: {5}",
+                stats.JitterDepth,
+                stats.ConcealedFrames,
+                stats.LateDiscards,
+                stats.OverflowDiscards,
+                stats.PacketsSent,
+                stats.PacketsReceived);
+        });
+    }
+
+    partial void OnOpenMicrophoneChanged(bool value)
+    {
+        if (!IsVoiceActive)
+        {
+            return;
+        }
+
+        _voice.SetTransmitting(value);
+    }
+
+    partial void OnCaptureModeChanged(AudioCaptureMode value) => ApplyAudioDevices();
+
+    partial void OnSelectedInputDeviceChanged(AudioDeviceInfo? value) => ApplyAudioDevices();
+
+    partial void OnSelectedOutputDeviceChanged(AudioDeviceInfo? value) => ApplyAudioDevices();
+
+    private void ApplyAudioDevices() =>
+        _voice.UpdateDevices(SelectedInputDevice?.Id, SelectedOutputDevice?.Id, CaptureMode);
 
     [RelayCommand]
     private async Task ShareScreenAsync()
@@ -178,6 +334,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         if (!value)
         {
             VideoStatsText = "";
+            VoiceStatsText = "";
         }
     }
 
@@ -238,6 +395,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _screenShare.RemoteFrameReady -= OnRemoteFrameReady;
         _screenShare.StateChanged -= OnScreenShareStateChanged;
         _screenShare.StatsUpdated -= OnScreenShareStatsUpdated;
+        _voice.StateChanged -= OnVoiceStateChanged;
+        _voice.StatsUpdated -= OnVoiceStatsUpdated;
 
         if (_session is not null)
         {
@@ -275,6 +434,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     private void RefreshHeaderText()
     {
         RefreshShareState();
+        RefreshVoiceState();
 
         var session = _session;
         HeaderText = session?.State switch

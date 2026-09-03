@@ -204,6 +204,38 @@ public sealed class VoiceSession : IVoiceSession
         StateChanged?.Invoke();
     }
 
+    public void UpdateDevices(string? inputDeviceId, string? outputDeviceId, AudioCaptureMode mode)
+    {
+        bool wasTransmitting;
+        AudioSettings settings;
+
+        lock (_sync)
+        {
+            _settings = _settings with
+            {
+                InputDeviceId = inputDeviceId,
+                OutputDeviceId = outputDeviceId,
+                Mode = mode,
+            };
+
+            settings = _settings;
+            wasTransmitting = _transmitting;
+        }
+
+        if (wasTransmitting)
+        {
+            _capture.Stop();
+            _capture.Start(settings);
+        }
+
+        if (_playback.IsRunning)
+        {
+            _playback.Stop();
+            _playback.SetSource(PullPlayback);
+            _playback.Start(settings);
+        }
+    }
+
     private float[]? PullPlayback()
     {
         var jitter = _jitter;

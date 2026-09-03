@@ -1,9 +1,10 @@
-using LisoP2P.App.ViewModels;
+﻿using LisoP2P.App.ViewModels;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
@@ -17,6 +18,7 @@ public partial class MainWindow : Window
     private ChatViewModel? _boundChat;
     private CaptureTestWindow? _captureWindow;
     private bool _userScrolledUp;
+    private bool _pushToTalkHeld;
 
     public MainWindow(MainViewModel viewModel, Func<CaptureTestWindow> captureWindowFactory)
     {
@@ -25,6 +27,68 @@ public partial class MainWindow : Window
         _viewModel = viewModel;
         _captureWindowFactory = captureWindowFactory;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+
+        PreviewKeyDown += OnPushToTalkKeyDown;
+        PreviewKeyUp += OnPushToTalkKeyUp;
+        Deactivated += (_, _) => ReleasePushToTalk();
+    }
+
+    private void OnPushToTalkKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.IsRepeat || !MatchesPushToTalk(e) || _pushToTalkHeld)
+        {
+            return;
+        }
+
+        _pushToTalkHeld = true;
+        _viewModel.ActiveChat?.SetPushToTalk(true);
+    }
+
+    private void OnPushToTalkKeyUp(object sender, KeyEventArgs e)
+    {
+        if (!MatchesPushToTalk(e))
+        {
+            return;
+        }
+
+        ReleasePushToTalk();
+    }
+
+    private void ReleasePushToTalk()
+    {
+        if (!_pushToTalkHeld)
+        {
+            return;
+        }
+
+        _pushToTalkHeld = false;
+        _viewModel.ActiveChat?.SetPushToTalk(false);
+    }
+
+    private bool MatchesPushToTalk(KeyEventArgs e)
+    {
+        var chat = _viewModel.ActiveChat;
+
+        if (chat is null)
+        {
+            return false;
+        }
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var expected = chat.PushToTalk.Key;
+
+        if (expected == Key.Space && Keyboard.FocusedElement is TextBoxBase)
+        {
+            return false;
+        }
+
+        return key == expected || (expected, key) switch
+        {
+            (Key.LeftCtrl, Key.RightCtrl) => true,
+            (Key.LeftAlt, Key.RightAlt) => true,
+            (Key.LeftShift, Key.RightShift) => true,
+            _ => false,
+        };
     }
 
     private void OpenCaptureTest_Click(object sender, RoutedEventArgs e)
