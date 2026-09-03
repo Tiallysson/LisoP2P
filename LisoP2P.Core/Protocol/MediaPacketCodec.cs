@@ -7,6 +7,8 @@ public static class MediaPacketCodec
     public const byte CurrentVersion = 1;
     public const byte KeyframeFlag = 1;
     public const byte DefaultStreamId = 0;
+    public const byte VideoStreamId = 0;
+    public const byte AudioStreamId = 1;
 
     public const int HeaderSize = 13;
     public const int MaxPayloadSize = 1200;

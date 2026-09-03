@@ -19,4 +19,7 @@ public enum MessageType : byte
     ScreenShareStart = 40,
     ScreenShareStop = 41,
     KeyframeRequest = 42,
+
+    VoiceStart = 50,
+    VoiceStop = 51,
 }
