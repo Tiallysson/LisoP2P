@@ -16,7 +16,8 @@ public sealed class MediaFoundationH264Decoder : IVideoDecoder
     private static readonly Guid LowLatencyKey = new("9c27891a-ed7a-40e1-88e8-b22727a024ee");
 
     private IMFTransform? _transform;
-    private byte[] _bgra = [];
+    private byte[][] _bgra = [];
+    private int _bgraIndex;
     private long _sampleTime;
     private int _stride;
     private int _codedWidth;
@@ -182,16 +183,17 @@ public sealed class MediaFoundationH264Decoder : IVideoDecoder
             var nv12 = new byte[length];
             Marshal.Copy(pointer, nv12, 0, length);
 
-            var required = Nv12Converter.BgraBufferSize(Width, Height);
-
-            if (_bgra.Length < required)
+            if (_bgra.Length == 0)
             {
-                _bgra = new byte[required];
+                return null;
             }
 
-            Nv12Converter.ToBgra(nv12, stride, _codedHeight, Width, Height, _bgra);
+            var target = _bgra[_bgraIndex];
+            _bgraIndex = (_bgraIndex + 1) % _bgra.Length;
 
-            return new PreviewFrame(_bgra, Width, Height, Width * 4);
+            Nv12Converter.ToBgra(nv12, stride, _codedHeight, Width, Height, target);
+
+            return new PreviewFrame(target, Width, Height, Width * 4);
         }
         finally
         {
@@ -273,7 +275,10 @@ public sealed class MediaFoundationH264Decoder : IVideoDecoder
             : _codedWidth;
 
         _outputBufferSize = Nv12Converter.Nv12BufferSize(Math.Max(_stride, _codedWidth), _codedHeight);
-        _bgra = new byte[Nv12Converter.BgraBufferSize(Width, Height)];
+
+        var size = Nv12Converter.BgraBufferSize(Width, Height);
+        _bgra = [new byte[size], new byte[size], new byte[size]];
+        _bgraIndex = 0;
     }
 
     private static bool ReadTransformFlag(IMFTransform transform, Guid key)

@@ -1,9 +1,10 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Net;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LisoP2P.Core;
+using LisoP2P.Media;
 using LisoP2P.Net;
 using LisoP2P.Storage;
 
@@ -16,11 +17,18 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ManualPeerConnector _connector;
     private readonly ISessionManager _sessionManager;
     private readonly IChatStore _chatStore;
+    private readonly IScreenShareSession _screenShare;
+    private readonly ICapturePipeline _pipeline;
     private readonly NetworkOptions _options;
 
-    public string Nickname => _identity.Nickname;
     public string ShortId => _identity.Id.Value.ToString("N")[..8];
     public ObservableCollection<PeerViewModel> Peers { get; } = [];
+
+    [ObservableProperty]
+    private string _nickname;
+
+    [ObservableProperty]
+    private string _nicknameError = "";
 
     [ObservableProperty]
     private string _manualConnectAddress = "";
@@ -40,6 +48,8 @@ public sealed partial class MainViewModel : ObservableObject
         ManualPeerConnector connector,
         ISessionManager sessionManager,
         IChatStore chatStore,
+        IScreenShareSession screenShare,
+        ICapturePipeline pipeline,
         NetworkOptions options)
     {
         _identity = identity;
@@ -47,13 +57,37 @@ public sealed partial class MainViewModel : ObservableObject
         _connector = connector;
         _sessionManager = sessionManager;
         _chatStore = chatStore;
+        _screenShare = screenShare;
+        _pipeline = pipeline;
         _options = options;
+        _nickname = identity.Nickname;
 
+        _identity.NicknameChanged += OnIdentityNicknameChanged;
         _discovery.PeerAppeared += OnPeerAppeared;
         _discovery.PeerUpdated += OnPeerUpdated;
         _discovery.PeerLost += OnPeerLost;
 
         UpdateStatusText();
+    }
+
+    private void OnIdentityNicknameChanged(string nickname)
+    {
+        Application.Current.Dispatcher.Invoke(() => Nickname = nickname);
+    }
+
+    [RelayCommand]
+    private void SaveNickname()
+    {
+        if (!NicknameRules.IsValid(Nickname))
+        {
+            NicknameError = $"Informe um nome com até {NicknameRules.MaxLength} caracteres.";
+            Nickname = _identity.Nickname;
+            return;
+        }
+
+        _identity.SetNickname(Nickname);
+        Nickname = _identity.Nickname;
+        NicknameError = "";
     }
 
     partial void OnSelectedPeerChanged(PeerViewModel? value)
@@ -68,7 +102,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         ActiveChat?.Dispose();
 
-        var chat = new ChatViewModel(peerVm.Id, peerVm.Nickname, _chatStore, _sessionManager, _identity);
+        var chat = new ChatViewModel(
+            peerVm.Id, peerVm.Nickname, _chatStore, _sessionManager, _identity, _screenShare, _pipeline);
         ActiveChat = chat;
 
         await chat.LoadHistoryAsync().ConfigureAwait(false);
@@ -95,6 +130,11 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var existing = Peers.FirstOrDefault(p => p.Id.Value == peer.Id.Value);
             existing?.UpdateFrom(peer);
+
+            if (ActiveChat?.PeerId.Value == peer.Id.Value)
+            {
+                ActiveChat.UpdateNickname(peer.Nickname);
+            }
         });
     }
 
@@ -114,7 +154,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void UpdateStatusText()
     {
-        StatusText = $"Discovery: {_options.DiscoveryPort}  Session: {_options.SessionPort}  Peers: {Peers.Count}";
+        StatusText =
+            $"Discovery: {_options.DiscoveryPort}  Session: {_options.SessionPort}  " +
+            $"Mídia: {_options.MediaPort}  Peers: {Peers.Count}";
     }
 
     [RelayCommand]

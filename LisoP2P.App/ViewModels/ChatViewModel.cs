@@ -1,10 +1,14 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LisoP2P.Core;
 using LisoP2P.Core.Protocol;
+using LisoP2P.Media;
 using LisoP2P.Net;
 using LisoP2P.Storage;
 
@@ -16,12 +20,20 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     private readonly IChatStore _chatStore;
     private readonly ISessionManager _sessionManager;
     private readonly IIdentityStore _identity;
+    private readonly IScreenShareSession _screenShare;
+    private readonly ICapturePipeline _pipeline;
     private readonly DispatcherTimer _headerTimer;
     private IPeerSession? _session;
+    private WriteableBitmap? _remoteBitmap;
+    private int _remoteFramePending;
 
     public PeerId PeerId => _peerId;
-    public string PeerNickname { get; }
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
+    public IReadOnlyList<CaptureAdapterInfo> Monitors => _pipeline.AvailableMonitors;
+    public bool HasMultipleMonitors => Monitors.Count > 1;
+
+    [ObservableProperty]
+    private string _peerNickname;
 
     [ObservableProperty]
     private string _draftText = "";
@@ -29,16 +41,144 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _headerText = "Desconectado";
 
-    public ChatViewModel(PeerId peerId, string nickname, IChatStore chatStore, ISessionManager sessionManager, IIdentityStore identity)
+    [ObservableProperty]
+    private CaptureAdapterInfo? _selectedMonitor;
+
+    [ObservableProperty]
+    private bool _canShare;
+
+    [ObservableProperty]
+    private bool _isSharing;
+
+    [ObservableProperty]
+    private bool _isWatching;
+
+    [ObservableProperty]
+    private ImageSource? _remoteVideo;
+
+    [ObservableProperty]
+    private bool _debugMode;
+
+    [ObservableProperty]
+    private string _videoStatsText = "";
+
+    public ChatViewModel(
+        PeerId peerId,
+        string nickname,
+        IChatStore chatStore,
+        ISessionManager sessionManager,
+        IIdentityStore identity,
+        IScreenShareSession screenShare,
+        ICapturePipeline pipeline)
     {
         _peerId = peerId;
-        PeerNickname = nickname;
+        _peerNickname = nickname;
         _chatStore = chatStore;
         _sessionManager = sessionManager;
         _identity = identity;
+        _screenShare = screenShare;
+        _pipeline = pipeline;
+        _selectedMonitor = _pipeline.AvailableMonitors.FirstOrDefault();
+
+        _screenShare.RemoteFrameReady += OnRemoteFrameReady;
+        _screenShare.StateChanged += OnScreenShareStateChanged;
+        _screenShare.StatsUpdated += OnScreenShareStatsUpdated;
 
         _headerTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(2) };
         _headerTimer.Tick += (_, _) => RefreshHeaderText();
+
+        RefreshShareState();
+    }
+
+    [RelayCommand]
+    private async Task ShareScreenAsync()
+    {
+        var monitor = SelectedMonitor ?? Monitors.FirstOrDefault();
+
+        if (monitor is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _screenShare.StartSharingAsync(_peerId, monitor.Index, new CaptureSettings(), CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Application.Current.Dispatcher.Invoke(() => VideoStatsText = ex.Message);
+        }
+    }
+
+    [RelayCommand]
+    private async Task StopShareAsync() => await _screenShare.StopSharingAsync();
+
+    private void OnScreenShareStateChanged() =>
+        Application.Current.Dispatcher.Invoke(RefreshShareState);
+
+    private void RefreshShareState()
+    {
+        IsSharing = _screenShare.IsSharing && _screenShare.SharingWith == _peerId;
+        IsWatching = _screenShare.IsWatching && _screenShare.WatchingFrom == _peerId;
+        CanShare = !IsSharing && _session?.State == SessionState.Connected;
+
+        if (!IsWatching)
+        {
+            RemoteVideo = null;
+            _remoteBitmap = null;
+            VideoStatsText = "";
+        }
+    }
+
+    private void OnScreenShareStatsUpdated(ScreenShareStats stats)
+    {
+        if (!DebugMode)
+        {
+            return;
+        }
+
+        Application.Current.Dispatcher.InvokeAsync(() => VideoStatsText = string.Format(
+            CultureInfo.CurrentCulture,
+            "Exibição: {0:0} fps   Perdidos: {1}   Em remontagem: {2}   Keyframes pedidos: {3}   Decoder: {4}",
+            stats.DecodedFps,
+            stats.DroppedFrames,
+            stats.PendingFrames,
+            stats.KeyframeRequests,
+            stats.DecoderName));
+    }
+
+    private void OnRemoteFrameReady(PreviewFrame frame)
+    {
+        if (_screenShare.WatchingFrom != _peerId)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _remoteFramePending, 1) == 1)
+        {
+            return;
+        }
+
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            Interlocked.Exchange(ref _remoteFramePending, 0);
+
+            if (_remoteBitmap is null || _remoteBitmap.PixelWidth != frame.Width || _remoteBitmap.PixelHeight != frame.Height)
+            {
+                _remoteBitmap = new WriteableBitmap(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null);
+                RemoteVideo = _remoteBitmap;
+            }
+
+            _remoteBitmap.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height), frame.Bgra, frame.Stride, 0);
+        });
+    }
+
+    partial void OnDebugModeChanged(bool value)
+    {
+        if (!value)
+        {
+            VideoStatsText = "";
+        }
     }
 
     public async Task LoadHistoryAsync()
@@ -78,6 +218,9 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _session = session;
         session.StateChanged += OnSessionStateChanged;
         session.MessageReceived += OnMessageReceived;
+        session.RemoteNicknameChanged += OnRemoteNicknameChanged;
+
+        UpdateNickname(session.RemoteNickname);
 
         Application.Current.Dispatcher.Invoke(RefreshHeaderText);
         _headerTimer.Start();
@@ -92,15 +235,32 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     {
         _headerTimer.Stop();
 
+        _screenShare.RemoteFrameReady -= OnRemoteFrameReady;
+        _screenShare.StateChanged -= OnScreenShareStateChanged;
+        _screenShare.StatsUpdated -= OnScreenShareStatsUpdated;
+
         if (_session is not null)
         {
             _session.StateChanged -= OnSessionStateChanged;
             _session.MessageReceived -= OnMessageReceived;
+            _session.RemoteNicknameChanged -= OnRemoteNicknameChanged;
             _session = null;
         }
     }
 
     public void Dispose() => Detach();
+
+    public void UpdateNickname(string nickname)
+    {
+        if (string.IsNullOrWhiteSpace(nickname) || string.Equals(nickname, PeerNickname, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Application.Current.Dispatcher.Invoke(() => PeerNickname = nickname);
+    }
+
+    private void OnRemoteNicknameChanged(string nickname) => UpdateNickname(nickname);
 
     private void OnSessionStateChanged(SessionState state)
     {
@@ -114,6 +274,8 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
 
     private void RefreshHeaderText()
     {
+        RefreshShareState();
+
         var session = _session;
         HeaderText = session?.State switch
         {

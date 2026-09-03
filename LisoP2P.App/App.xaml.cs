@@ -1,7 +1,8 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using LisoP2P.App.ViewModels;
 using LisoP2P.Core;
+using LisoP2P.Media;
 using LisoP2P.Net;
 using LisoP2P.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +14,7 @@ public partial class App : Application
     private IServiceProvider _services = null!;
     private IDiscoveryService? _discovery;
     private ISessionManager? _sessionManager;
+    private IScreenShareSession? _screenShare;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -28,7 +30,16 @@ public partial class App : Application
         services.AddSingleton<IDiscoveryService, DiscoveryService>();
         services.AddSingleton<ISessionManager, SessionManager>();
         services.AddSingleton<ManualPeerConnector>();
+        services.AddSingleton<IMediaLogger>(_ => new FileMediaLogger(Path.Combine(identityDirectory, "logs", "media.log")));
+        services.AddSingleton<IScreenCapture, DxgiScreenCapture>();
+        services.AddSingleton<ICapturePipeline, CapturePipeline>();
+        services.AddSingleton<IMediaSender, UdpMediaSender>();
+        services.AddSingleton<IMediaReceiver, UdpMediaReceiver>();
+        services.AddSingleton<IScreenShareSession, ScreenShareSession>();
         services.AddSingleton<MainViewModel>();
+        services.AddTransient<CaptureTestViewModel>();
+        services.AddTransient<CaptureTestWindow>();
+        services.AddSingleton<Func<CaptureTestWindow>>(provider => provider.GetRequiredService<CaptureTestWindow>);
         services.AddSingleton<MainWindow>();
         _services = services.BuildServiceProvider();
 
@@ -38,11 +49,26 @@ public partial class App : Application
         _sessionManager = _services.GetRequiredService<ISessionManager>();
         await _sessionManager.StartListeningAsync(CancellationToken.None);
 
+        _screenShare = _services.GetRequiredService<IScreenShareSession>();
+        await _screenShare.StartAsync(CancellationToken.None);
+
         _services.GetRequiredService<MainWindow>().Show();
     }
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        if (_services is not null)
+        {
+            await _services.GetRequiredService<ICapturePipeline>().DisposeAsync();
+            _services.GetRequiredService<IScreenCapture>().Dispose();
+            MediaFoundationRuntime.Shutdown();
+        }
+
+        if (_screenShare is not null)
+        {
+            await _screenShare.DisposeAsync();
+        }
+
         if (_sessionManager is not null)
         {
             await _sessionManager.DisposeAsync();
@@ -70,7 +96,21 @@ public partial class App : Application
         {
             DiscoveryPort = ParseIntArg(args, "--discovery-port") ?? 47100,
             SessionPort = ParseIntArg(args, "--session-port") ?? 47101,
+            MediaPort = ParseIntArg(args, "--media-port") ?? ResolveDefaultMediaPort(args),
         };
+    }
+
+    /// <summary>
+    /// Two instances on the same machine are told apart by --session-port; deriving the media
+    /// port from it keeps the second instance from fighting the first for the UDP port.
+    /// </summary>
+    private static int ResolveDefaultMediaPort(string[] args)
+    {
+        var sessionPort = ParseIntArg(args, "--session-port") ?? NetworkOptions.DefaultSessionPort;
+
+        return sessionPort == NetworkOptions.DefaultSessionPort
+            ? NetworkOptions.DefaultMediaPort
+            : sessionPort + 1;
     }
 
     private static int? ParseIntArg(string[] args, string name)
