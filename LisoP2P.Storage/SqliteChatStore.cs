@@ -29,6 +29,11 @@ public sealed class SqliteChatStore : IChatStore
 
         CREATE INDEX IF NOT EXISTS ix_messages_peer_time ON messages(peer_id, sent_at);
         """,
+        """
+        ALTER TABLE messages ADD COLUMN room_id TEXT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_messages_room_time ON messages(room_id, sent_at);
+        """,
     ];
 
     private readonly string _connectionString;
@@ -54,8 +59,8 @@ public sealed class SqliteChatStore : IChatStore
         await using var connection = await OpenAsync().ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT OR IGNORE INTO messages (message_id, peer_id, is_outgoing, text, sent_at, delivered)
-            VALUES ($messageId, $peerId, $isOutgoing, $text, $sentAt, $delivered);
+            INSERT OR IGNORE INTO messages (message_id, peer_id, is_outgoing, text, sent_at, delivered, room_id)
+            VALUES ($messageId, $peerId, $isOutgoing, $text, $sentAt, $delivered, $roomId);
             """;
         command.Parameters.AddWithValue("$messageId", message.MessageId.ToString());
         command.Parameters.AddWithValue("$peerId", message.PeerId.Value.ToString());
@@ -63,6 +68,9 @@ public sealed class SqliteChatStore : IChatStore
         command.Parameters.AddWithValue("$text", message.Text);
         command.Parameters.AddWithValue("$sentAt", message.SentAt.ToUnixTimeMilliseconds());
         command.Parameters.AddWithValue("$delivered", message.Delivered ? 1 : 0);
+        command.Parameters.AddWithValue(
+            "$roomId",
+            message.RoomId is { } room ? room.Value.ToString() : DBNull.Value);
         await command.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
@@ -80,13 +88,30 @@ public sealed class SqliteChatStore : IChatStore
         await using var connection = await OpenAsync().ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT message_id, peer_id, is_outgoing, text, sent_at, delivered
+            SELECT message_id, peer_id, is_outgoing, text, sent_at, delivered, room_id
             FROM messages
-            WHERE peer_id = $peerId
+            WHERE peer_id = $peerId AND room_id IS NULL
             ORDER BY sent_at ASC
             LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$peerId", peer.Value.ToString());
+        command.Parameters.AddWithValue("$limit", limit);
+
+        return await ReadAllAsync(command).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<StoredMessage>> GetRoomHistoryAsync(RoomId room, int limit = 100)
+    {
+        await using var connection = await OpenAsync().ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT message_id, peer_id, is_outgoing, text, sent_at, delivered, room_id
+            FROM messages
+            WHERE room_id = $roomId
+            ORDER BY sent_at ASC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$roomId", room.Value.ToString());
         command.Parameters.AddWithValue("$limit", limit);
 
         return await ReadAllAsync(command).ConfigureAwait(false);
@@ -97,9 +122,9 @@ public sealed class SqliteChatStore : IChatStore
         await using var connection = await OpenAsync().ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT message_id, peer_id, is_outgoing, text, sent_at, delivered
+            SELECT message_id, peer_id, is_outgoing, text, sent_at, delivered, room_id
             FROM messages
-            WHERE peer_id = $peerId AND is_outgoing = 1 AND delivered = 0
+            WHERE peer_id = $peerId AND is_outgoing = 1 AND delivered = 0 AND room_id IS NULL
             ORDER BY sent_at ASC;
             """;
         command.Parameters.AddWithValue("$peerId", peer.Value.ToString());
@@ -136,6 +161,7 @@ public sealed class SqliteChatStore : IChatStore
                 Text = reader.GetString(3),
                 SentAt = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4)),
                 Delivered = reader.GetInt64(5) != 0,
+                RoomId = reader.IsDBNull(6) ? null : new RoomId(Guid.Parse(reader.GetString(6))),
             });
         }
 
