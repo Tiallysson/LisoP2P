@@ -3,11 +3,12 @@
 App de comunicação P2P para Windows, estilo Discord, que conecta máquinas
 diretamente pela LAN (real ou virtual via Radmin VPN), sem servidor central.
 
-Este repositório está na **fase 4 de 6**: solution, protocolo de mensagens,
+Este repositório está na **fase 5 de 6**: solution, protocolo de mensagens,
 descoberta de peers na rede, sessão TCP 1:1, chat de texto com histórico local,
-captura de tela com encode H.264, transmissão de tela 1:1 e **voz** (microfone
-e/ou som do sistema, Opus, push-to-talk). Veja `fase0-prompt.md` a
-`fase4-prompt.md` em `LisoP2P.App/Docs/` para as especificações completas de
+captura de tela com encode H.264, transmissão de tela, voz (microfone e/ou som
+do sistema, Opus, push-to-talk) e **sala em mesh** — várias sessões simultâneas
+com chat, tela e voz para todos os membros. Veja `fase0-prompt.md` a
+`fase5-prompt.md` em `LisoP2P.App/Docs/` para as especificações completas de
 cada fase.
 
 ## Estrutura
@@ -18,8 +19,9 @@ cada fase.
   sessão TCP 1:1 (`PeerSession`/`SessionManager`) com handshake, keepalive e
   reconexão automática, transporte de mídia por UDP (`UdpMediaSender`,
   `UdpMediaReceiver`, `FrameReassembler`), jitter buffer de áudio
-  (`JitterBuffer`) e a orquestração de tela e voz (`ScreenShareSession`,
-  `VoiceSession`).
+  (`JitterBuffer`), mixagem de várias vozes (`AudioMixer`), a sala e seu gossip
+  de membros (`RoomService`, `RoomChatRouter`, `BitrateLadder`) e a orquestração
+  de tela e voz (`ScreenShareSession`, `VoiceSession`).
 - `LisoP2P.Storage` — histórico de chat em SQLite (`IChatStore`).
 - `LisoP2P.Media` — captura de tela via DXGI Desktop Duplication
   (`DxgiScreenCapture`), conversão BGRA→NV12 na GPU (`TextureConverter`,
@@ -387,15 +389,154 @@ sequências construídas à mão.
 
 ### Limitações conhecidas
 
-- 1:1, um par por vez. Vários participantes de voz e mixagem entre eles são
-  fase 5 em diante.
 - Sem cancelamento de eco e sem detecção de atividade de voz (VAD) — é por isso
   que o PTT é o padrão. Em "voz aberta" com caixas de som, o peer pode ouvir o
   retorno do próprio áudio.
 - Sem RTCP: não há feedback de taxa do receptor, nem para vídeo nem para voz.
-- A porta de mídia aceita áudio de qualquer origem enquanto a chamada está
-  ativa; o filtro por endereço existente é usado pelo vídeo. Em escopo 1:1 na
-  LAN isso não é um problema prático, mas não é uma autenticação.
+- A porta de mídia aceita pacotes de qualquer origem; o `SenderId` do cabeçalho
+  (fase 5) diz de quem cada pacote se diz ser, mas não autentica ninguém.
+
+## Sala em mesh (fase 5)
+
+Até a fase 4 tudo assumia **um peer conectado por vez**. A fase 5 quebra essa
+suposição: a **sala** agrupa N sessões e passa a ser o alvo de chat, tela e voz,
+no lugar de um `PeerId` individual.
+
+O escopo é **mesh completo, sem SFU ou retransmissor**: cada membro mantém uma
+sessão com cada outro membro. O teto esperado é 3 pessoas confortável — onde 4
+começa a doer está documentado abaixo, e é conhecimento, não bug.
+
+### A sala não tem dono
+
+Não existe servidor da sala para perguntar quem está lá. A lista de membros é
+replicada por **gossip simples**:
+
+1. A convida B (`RoomInvite` na sessão TCP entre os dois), já incluindo a lista
+   de membros que A conhece.
+2. B aceita e responde `RoomJoin` com a sua própria visão.
+3. B então **conecta com todos os outros membros da lista** que A mandou, via
+   `ISessionManager.ConnectAsync` (a descoberta da fase 0 resolve o IP; se o peer
+   não estiver visível, vale o convite manual da fase 0).
+4. Conforme cada conexão se estabelece, B anuncia sua entrada com
+   `RoomMemberList`. Quem recebe e **aprende algo novo** retransmite; quem não
+   aprende nada fica quieto, e é isso que faz o gossip terminar em vez de ecoar.
+
+A convergência **não é instantânea**. Durante os primeiros segundos de alguém
+entrando, membros diferentes podem ter visões levemente diferentes de quem está
+na sala. Isso é esperado: a UI atualiza conforme `RoomMemberList` chega, sem
+travar esperando "certeza".
+
+A fusão de listas é **aditiva** — um `RoomMemberList` nunca remove ninguém. Um
+peer atrasado que gossipasse sua visão velha despejaria membros vivos. Remoção
+acontece só por `RoomLeave` explícito ou por sessão que fechou de vez (a máquina
+de reconexão da fase 1 decide isso, o que leva até ~15 s).
+
+Convites são **aceitos automaticamente**: o app é para uma LAN ou rede Radmin em
+que o usuário já confia, e um diálogo de confirmação deixaria quem convidou
+esperando sem retorno.
+
+### Quem está falando
+
+O indicador de fala usa o sinal explícito `RoomSpeaking`, enviado ao apertar e ao
+soltar o push-to-talk — **nunca inferido dos pacotes de mídia chegando**. É mais
+barato e mais confiável do que fazer cada peer inspecionar o fluxo de áudio de
+todos os outros.
+
+Como rede não é confiável, quem fala **renova** o sinal a cada 1 s, e quem ouve
+descarta um falante que não renovou em 3 s. Sem isso, o app do outro lado
+travando com a tecla pressionada deixaria a bolinha acesa para sempre.
+
+### Mídia em mesh
+
+Quem compartilha a tela **codifica uma vez e envia N vezes**: o
+`IMediaSender.SendFrame` fragmenta o frame uma vez e manda cada fragmento para
+todos os destinos. A CPU de encode não escala com a plateia — só a banda de
+upload escala. Esse é exatamente o custo do mesh.
+
+Voz é o contrário do vídeo: **todo mundo com todo mundo, simultaneamente**. Cada
+receptor mantém **um `IJitterBuffer` por peer remetente**, nunca um só
+compartilhado — os números de sequência são por remetente, e misturar fontes num
+único buffer faria cada pacote parecer fora de ordem em relação ao anterior. A
+cada 20 ms o `AudioMixer` puxa um frame de cada buffer ativo e soma, dividindo
+pela raiz do número de fontes que realmente produziram áudio (uma voz sozinha não
+fica com metade do volume quando a segunda pessoa fala) e aplicando um clamp.
+
+Todo buffer ativo é puxado em todo tick, mesmo sem áudio: um jitter buffer que
+não é drenado no ritmo certo dessincroniza.
+
+#### `SenderId` no cabeçalho de mídia
+
+O socket de mídia agora recebe datagramas de vários remetentes ao mesmo tempo, e
+o filtro por endereço de origem da fase 3 não serve mais — além de quebrar quando
+NAT ou Radmin remapeia a porta. O cabeçalho binário passou de 13 para 29 bytes
+com um `SenderId` (Guid de 16 bytes) explícito, e a versão do pacote foi para 2;
+um pacote versão 1 não decodifica mais.
+
+O receptor mantém um `FrameReassembler` **por remetente** (no máximo 8, já que o
+socket aceita bytes de qualquer origem) e descarta os próprios pacotes de volta.
+
+### Bitrate por número de receptores
+
+Ajuste **por degrau, com base na contagem de membros** — não adaptativo por
+feedback de rede (RTCP segue fora de escopo). Mais espectadores puxam mais upload
+do mesmo link, então a fonte diminui:
+
+| Receptores | Bitrate   | FPS |
+| ---------- | --------- | --- |
+| 1          | 3000 kbps | 30  |
+| 2          | 2200 kbps | 30  |
+| 3          | 1600 kbps | 24  |
+| 4 ou mais  | 1000 kbps | 15  |
+
+Quem compartilha reage a `RoomMemberList` chegando durante o compartilhamento
+ativo. Como o degrau muda **fps além do bitrate**, e ambos são negociados na
+abertura do encoder, a captura é reiniciada com os novos parâmetros e o
+`ScreenShareStart` é reanunciado — o que também gera o keyframe que os receptores
+precisam para acompanhar a mudança.
+
+**Estes números são um ponto de partida razoável, não resultado de medição.**
+Calibrar exige o teste de 4 pessoas descrito abaixo.
+
+### Um apresentador por vez
+
+Só um membro compartilha a tela por vez: para os outros, o botão fica
+desabilitado com um tooltip dizendo quem está apresentando. Isso é **decisão de
+produto** desta fase — evita N streams de vídeo simultâneos, que o mesh não
+aguenta bem — e não limitação do protocolo. Voz não tem essa restrição.
+
+### Histórico
+
+A tabela `messages` ganhou a coluna `room_id` (nullable) por migração incremental
+via `PRAGMA user_version`: `NULL` é a conversa 1:1 antiga, preenchido é mensagem
+de sala. No balão da sala o nome do remetente aparece — em 1:1 ele era implícito,
+em grupo precisa ser explícito.
+
+Mensagem de sala não é confirmada com `ChatAck`: não há um destinatário único
+para confirmar, e N acks para um mesmo id deixariam o estado "entregue" ambíguo.
+
+### Resultados do teste com 4 pessoas
+
+**Ainda não executado.** Precisa de quatro máquinas em LAN e em Radmin VPN. O
+registro pedido pelo cronograma vai aqui: degrau de bitrate observado, CPU de
+quem compartilha (encode único, 3 envios) e de quem recebe (decode mais mixagem
+de até 3 fontes de áudio), e se houve engasgo perceptível de vídeo ou áudio e em
+qual papel.
+
+Esse registro é a base para decidir se compensa implementar um relay/SFU depois —
+que reintroduziria a dependência de servidor que o projeto evita — ou se o teto
+de ~3-4 pessoas é aceitável. **Documentar o limite é a entrega, não escondê-lo.**
+
+### Limitações conhecidas
+
+- Convite é aceito automaticamente; não há recusa nem lista de bloqueio.
+- Um apresentador de tela por vez (decisão de produto, ver acima).
+- Sem consenso: a lista de membros converge por gossip aditivo, o que basta para
+  3-4 nós e não pretende resolver partição de rede.
+- A saída implícita depende do timeout de reconexão da fase 1, então leva até
+  ~15 s para a lista atualizar quando alguém cai sem avisar.
+- O `SenderId` identifica o remetente, mas **não o autentica**: nada impede um
+  peer na mesma rede de forjar o campo.
+
 
 ## Dependências
 

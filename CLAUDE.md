@@ -4,15 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-**Fase 4** (of 6 planned phases) is implemented: fase 0 (scaffold, peer identity, wire protocol,
+**Fase 5** (of 6 planned phases) is implemented: fase 0 (scaffold, peer identity, wire protocol,
 UDP broadcast discovery, manual-connect fallback), fase 1 (TCP session with handshake/keepalive/
 reconnect, 1:1 chat with SQLite history), fase 2 (DXGI screen capture, H.264 encode, capture
 test window), fase 3 (fragmented UDP media transport, H.264 decode, 1:1 screen sharing wired
-into the conversation window) and fase 4 (WASAPI capture, Opus, jitter buffer, push-to-talk
-voice on the same media socket).
+into the conversation window), fase 4 (WASAPI capture, Opus, jitter buffer, push-to-talk
+voice on the same media socket) and fase 5 (mesh room: gossiped membership, room chat, screen
+share and voice fanned out to every member, per-peer jitter buffers with mixing, bitrate ladder).
 
 `LisoP2P.App/Docs/fase0-prompt.md` is the original Portuguese specification for the first phase
-(`fase1-prompt.md` through `fase4-prompt.md` cover the later ones). It
+(`fase1-prompt.md` through `fase5-prompt.md` cover the later ones). It
 names project prefixes as `P2PChat.*` and targets `net8.0` — this repo instead kept the
 `LisoP2P.*` prefix and targets `net10.0`/`net10.0-windows` (explicit choices made when starting
 implementation, since the scaffold already used net10.0). Everything else in the spec was
@@ -20,20 +21,24 @@ followed as written; read it before touching Core/Net if you need the full behav
 
 ## Architecture
 
-Five projects, referenced as `Media → Core`, `Net → Core, Media`, `App → Core, Net, Media`,
-`Tests → Core, Net, Media, Storage`:
+Six projects, referenced as `Media → Core`, `Net → Core, Media`, `Storage → Core`,
+`App → Core, Net, Media, Storage`, `Tests → Core, Net, Media, Storage`:
 
 - **`LisoP2P.Core`** (classlib, `net10.0`, no `-windows`) — `PeerId`, `IIdentityStore` /
   `FileIdentityStore`, `DiscoveredPeer`, and the `Protocol/` namespace: `Envelope`, `MessageType`,
   `AnnouncePayload`, and their MessagePack codecs (`ProtocolCodec`, `AnnouncePayloadCodec`),
-  plus the media wire format: `MediaPacketHeader` / `MediaPacketCodec` (fixed 13-byte binary
-  header, no MessagePack), `ScreenSharePayload` / `ScreenSharePayloadCodec` and
-  `VoicePayload` / `VoicePayloadCodec`.
+  plus the media wire format: `MediaPacketHeader` / `MediaPacketCodec` (fixed 29-byte binary
+  header carrying an explicit `SenderId`, no MessagePack), `ScreenSharePayload` /
+  `ScreenSharePayloadCodec`, `VoicePayload` / `VoicePayloadCodec`, plus the room protocol:
+  `RoomId`, `RoomMemberListPayload` / `RoomMemberInfo` / `RoomMemberListPayloadCodec` and
+  `RoomSpeakingPayload` / `RoomSpeakingPayloadCodec`.
 - **`LisoP2P.Net`** — `NetworkOptions`, `IDiscoveryService` / `DiscoveryService` (UDP broadcast
   discovery), `BroadcastAddressCalculator`, `ManualPeerConnector` (unicast fallback),
   `PeerSession` / `SessionManager`, and the media path: `IMediaSender` / `UdpMediaSender`,
   `IMediaReceiver` / `UdpMediaReceiver`, `FrameReassembler`, `IJitterBuffer` / `JitterBuffer`,
-  `IScreenShareSession` / `ScreenShareSession`, `IVoiceSession` / `VoiceSession`.
+  `IScreenShareSession` / `ScreenShareSession`, `IVoiceSession` / `VoiceSession`, and the room
+  layer: `RoomMember`, `IRoomService` / `RoomService` (gossip + speaking), `IRoomChatRouter` /
+  `RoomChatRouter`, `IAudioMixer` / `AudioMixer`, `BitrateLadder`, `MediaEndpoints`.
 - **`LisoP2P.Media`** — `IScreenCapture` / `DxgiScreenCapture` (Desktop Duplication),
   `TextureConverter` (BGRA→NV12, downscale to the target resolution and preview scaling on the
   D3D11 VideoProcessor), `IVideoEncoder` / `MediaFoundationH264Encoder` / `VideoEncoderFactory`
@@ -45,11 +50,17 @@ Five projects, referenced as `Media → Core`, `Net → Core, Media`, `App → C
   `IAudioDeviceCatalog` / `WasapiAudioDeviceCatalog`, `IAudioEncoder` / `OpusAudioEncoder`,
   `IAudioDecoder` / `OpusAudioDecoder`, `AudioResampler`, `AudioFrameAccumulator`. Depends on
   `Vortice.Direct3D11`, `Vortice.MediaFoundation`, `NAudio.Wasapi` and `Concentus`.
+- **`LisoP2P.Storage`** — SQLite chat history (`IChatStore` / `SqliteChatStore`, `StoredMessage`),
+  migrated incrementally through `PRAGMA user_version`.
 - **`LisoP2P.App`** (wpf, `net10.0-windows`) — WPF/MVVM UI (`CommunityToolkit.Mvvm`), composed via
-  `Microsoft.Extensions.DependencyInjection` in `App.xaml.cs` (no separate DI framework).
+  `Microsoft.Extensions.DependencyInjection` in `App.xaml.cs` (no separate DI framework). The room
+  screen is `RoomWindow` / `RoomViewModel`; the 1:1 conversation stays in `MainWindow` /
+  `ChatViewModel`.
 - **`LisoP2P.Tests`** (xunit) — codec round-trip/malformed-input coverage, identity persistence,
-  broadcast address calculation, fragment reassembly, screen-share orchestration, and a real
-  encode/decode round trip through Media Foundation.
+  broadcast address calculation, fragment reassembly, screen-share orchestration, a real
+  encode/decode round trip through Media Foundation, and the fase 5 logic: member gossip
+  convergence, speaking timeout against an injected clock, bitrate ladder, audio mixing, room chat
+  routing and per-`SenderId` media demultiplexing.
 
 **Hard constraint:** Core, Net, and Media target plain `net10.0` (no `-windows`) and must never
 reference `System.Windows`. Anything UI-facing needed from Net is exposed via an event/callback,
@@ -175,6 +186,67 @@ Design points worth knowing before touching this code:
   are set; the `ICodecAPI` call is guarded by `IsSupported`.
 - `CaptureSettings.ForceSoftwareEncoder` (checkbox "Forçar software" in the capture window) skips
   hardware enumeration entirely — the first thing to try when a GPU driver misbehaves.
+- Fase 5 turns "the peer" into "the room". `IRoomService` / `RoomService` sits *above*
+  `ISessionManager`: it owns the member list, and chat/screen/voice all target the room rather than
+  a `PeerId`. There is no room owner and no consensus — the list is replicated by additive gossip
+  (`RoomInvite` 60, `RoomJoin` 61, `RoomMemberList` 62, `RoomLeave` 63, `RoomSpeaking` 64, all over
+  the existing TCP sessions).
+- The member merge is **additive on purpose**: a `RoomMemberList` never removes anyone. A peer that
+  is slow to learn about a newcomer would otherwise evict live members every time it gossiped its
+  stale view. Removal happens only via explicit `RoomLeave` or a session that reached `Closed` for
+  good. Re-broadcast happens **only when the merge actually learned something**, which is what makes
+  the gossip terminate instead of echoing between peers forever.
+- Learning about a member is also the trigger to dial it (`ConnectToMember`) — mesh membership means
+  everyone holds a session with everyone. A member that discovery has not seen yet is logged and
+  skipped, not retried in a loop.
+- Invitations are auto-accepted. This is a deliberate product call for a trusted LAN/Radmin network:
+  a confirmation dialog would leave the inviter waiting with no feedback.
+- "Who is speaking" comes from the explicit `RoomSpeaking` signal on push-to-talk press/release,
+  **never inferred from arriving media packets**. The speaker renews every 1 s and a listener drops
+  a speaker that has not renewed in 3 s (`RoomService.SpeakingTimeout`), so an app that dies with
+  the key held does not leave the indicator stuck on. `RoomService.Tick()` does both the expiry and
+  the renewal; its clock is injected so the timeout is testable without `Task.Delay`.
+- `MediaPacketCodec` is at **version 2**: the header grew from 13 to 29 bytes to carry an explicit
+  16-byte `SenderId`. In a mesh the receive socket takes datagrams from several senders at once, so
+  the sender can no longer be "the only peer on the other end", and inferring it from the source
+  endpoint breaks when NAT or Radmin remaps the port. `UdpMediaReceiver` keeps one `FrameReassembler`
+  **per sender** (capped at 8, since the socket accepts bytes from anyone) and drops its own packets.
+  The old `IMediaReceiver.ExpectedSource` IP filter is gone.
+- `UdpMediaSender` takes `IIdentityStore` and stamps `SenderId` itself, so no send path can forget
+  it. `SendFrame` fragments once and sends each fragment to every destination: **one encode, N
+  sends**. Encode CPU does not scale with the audience; upload bandwidth does.
+- Voice is the opposite of video — everyone to everyone at once. Each receiver keeps **one
+  `IJitterBuffer` per sending peer**; sequence numbers are per sender, so folding sources into one
+  buffer would make every packet look out of order relative to the previous one. `AudioMixer` pulls
+  one frame from every active buffer each 20 ms tick (even when a buffer is empty — an undrained
+  jitter buffer drifts) and sums, scaling by `1/sqrt(contributors)` and clamping.
+- `IAudioMixer.MixNextFrame()` returns `float[]?`, and **null is how silence is spelled** at this
+  boundary: `PullWaveProvider.Read` breaks on a null pull and zero-fills, exactly as it already did
+  for `JitterBuffer.Pull`. A single contributing source is handed through **untouched** — it cannot
+  overflow on its own, and `Clamp` writes in place, which would corrupt the decoder's own buffer.
+- `BitrateLadder.SelectFor(receiverCount)` drives quality by member count (3000/2200/1600/1000 kbps).
+  Because a step changes **fps as well as bitrate**, and both are negotiated when the encoder opens,
+  `ScreenShareSession.UpdateTargetsAsync` restarts the pipeline and re-announces `ScreenShareStart`
+  rather than reconfiguring in place — the restart also produces the IDR receivers need. The numbers
+  are a starting point, not a measurement; calibrating them needs the four-peer test.
+- Only one member shares a screen at a time. That is a **product decision** for this phase (the mesh
+  does not carry N video streams well), not a protocol limit — `ScreenShareSession` ignores a second
+  sender instead of opening a decoder per sender, and the UI disables the button with a tooltip.
+- Room chat reuses `ChatMessage`; `ChatMessagePayload` gained `RoomId` at `[Key(2)]` (empty = 1:1) so
+  `RoomChatRouter` and the 1:1 `ChatViewModel` can tell the two apart. "Broadcast" is literally a
+  loop sending the same envelope once per session — there is no multicast between direct P2P
+  connections. `MessageId` dedupes. Room messages are **not** acked: there is no single recipient to
+  confirm, and N acks for one id would make "delivered" meaningless.
+- `IRoomChatRouter.BroadcastAsync` returns the `Guid` MessageId (the spec sketched `Task`). Net does
+  not reference Storage, so the caller has to persist the message under the id every recipient sees.
+- `messages` has a nullable `room_id` column (migration 2 via `PRAGMA user_version`). `NULL` is the
+  old 1:1 history; `GetHistoryAsync` and `GetUndeliveredAsync` filter on `room_id IS NULL` so room
+  chat never leaks into a 1:1 window. For a room row, `StoredMessage.PeerId` is the **sender** (not
+  the other party) so a bubble can show who wrote it.
+- `RoomMemberListPayloadCodec.TryDecode` normalizes as it decodes: nicknames sanitized, empty and
+  duplicate ids dropped, oversized lists rejected. MessagePack maps a bare nil onto a **null payload
+  and null reference properties**, so the null guards there are load-bearing — a fuzz test caught a
+  real `NullReferenceException` on random bytes.
 
 ## Commands
 
@@ -193,3 +265,11 @@ after 5 s of network loss, joining an ongoing share, 10 minutes with stable memo
 under 300 ms, voice plus screen without either degrading, recovery after a 2-3 s network cut,
 device switch mid-call) need two machines on LAN and on Radmin VPN, and have **not** been run
 yet — only a two-instance startup smoke check.
+
+The fase 5 acceptance list needs **three** instances (A, B, C) on LAN and on Radmin VPN: members
+converge within 5 s, chat shows the right sender, A shares and both B and C receive at the 3-member
+step, simultaneous speakers mix without stalling, a peer that closes drops out within ~15 s, and a
+fourth peer joining from one invitation connects to all three. The four-peer run that documents
+where the mesh stops scaling (bitrate step, CPU while sharing and receiving, any stutter and in
+which role) is an explicit **deliverable for the README, not a pass/fail gate** — and has **not**
+been run yet. Do not tune the ladder to make it look good; the measurement is the point.
