@@ -22,4 +22,10 @@ public enum MessageType : byte
 
     VoiceStart = 50,
     VoiceStop = 51,
+
+    RoomInvite = 60,
+    RoomJoin = 61,
+    RoomMemberList = 62,
+    RoomLeave = 63,
+    RoomSpeaking = 64,
 }
