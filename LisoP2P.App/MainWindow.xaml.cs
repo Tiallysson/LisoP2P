@@ -15,17 +15,23 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
     private readonly Func<CaptureTestWindow> _captureWindowFactory;
+    private readonly Func<RoomWindow> _roomWindowFactory;
     private ChatViewModel? _boundChat;
     private CaptureTestWindow? _captureWindow;
+    private RoomWindow? _roomWindow;
     private bool _userScrolledUp;
     private bool _pushToTalkHeld;
 
-    public MainWindow(MainViewModel viewModel, Func<CaptureTestWindow> captureWindowFactory)
+    public MainWindow(
+        MainViewModel viewModel,
+        Func<CaptureTestWindow> captureWindowFactory,
+        Func<RoomWindow> roomWindowFactory)
     {
         InitializeComponent();
         DataContext = viewModel;
         _viewModel = viewModel;
         _captureWindowFactory = captureWindowFactory;
+        _roomWindowFactory = roomWindowFactory;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
 
         PreviewKeyDown += OnPushToTalkKeyDown;
@@ -103,6 +109,20 @@ public partial class MainWindow : Window
         _captureWindow.Owner = this;
         _captureWindow.Closed += (_, _) => _captureWindow = null;
         _captureWindow.Show();
+    }
+
+    private void OpenRoom_Click(object sender, RoutedEventArgs e)
+    {
+        if (_roomWindow is not null)
+        {
+            _roomWindow.Activate();
+            return;
+        }
+
+        _roomWindow = _roomWindowFactory();
+        _roomWindow.Owner = this;
+        _roomWindow.Closed += (_, _) => _roomWindow = null;
+        _roomWindow.Show();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

@@ -16,6 +16,8 @@ public partial class App : Application
     private ISessionManager? _sessionManager;
     private IScreenShareSession? _screenShare;
     private IVoiceSession? _voice;
+    private IRoomService? _rooms;
+    private IRoomChatRouter? _router;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -41,10 +43,14 @@ public partial class App : Application
         services.AddSingleton<IAudioPlayback, WasapiAudioPlayback>();
         services.AddSingleton<IAudioDeviceCatalog, WasapiAudioDeviceCatalog>();
         services.AddSingleton<IVoiceSession, VoiceSession>();
+        services.AddSingleton<IRoomService, RoomService>();
+        services.AddSingleton<IRoomChatRouter, RoomChatRouter>();
         services.AddSingleton<MainViewModel>();
         services.AddTransient<CaptureTestViewModel>();
         services.AddTransient<CaptureTestWindow>();
         services.AddSingleton<Func<CaptureTestWindow>>(provider => provider.GetRequiredService<CaptureTestWindow>);
+        services.AddTransient<RoomWindow>();
+        services.AddSingleton<Func<RoomWindow>>(provider => provider.GetRequiredService<RoomWindow>);
         services.AddSingleton<MainWindow>();
         _services = services.BuildServiceProvider();
 
@@ -60,6 +66,12 @@ public partial class App : Application
         _voice = _services.GetRequiredService<IVoiceSession>();
         await _voice.StartAsync(CancellationToken.None);
 
+        _rooms = _services.GetRequiredService<IRoomService>();
+        await _rooms.StartAsync(CancellationToken.None);
+
+        _router = _services.GetRequiredService<IRoomChatRouter>();
+        await _router.StartAsync(CancellationToken.None);
+
         _services.GetRequiredService<MainWindow>().Show();
     }
 
@@ -70,6 +82,11 @@ public partial class App : Application
             await _services.GetRequiredService<ICapturePipeline>().DisposeAsync();
             _services.GetRequiredService<IScreenCapture>().Dispose();
             MediaFoundationRuntime.Shutdown();
+        }
+
+        if (_rooms is not null)
+        {
+            await _rooms.DisposeAsync();
         }
 
         if (_voice is not null)

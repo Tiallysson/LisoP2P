@@ -19,6 +19,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IChatStore _chatStore;
     private readonly IScreenShareSession _screenShare;
     private readonly IVoiceSession _voice;
+    private readonly IRoomService _rooms;
+    private readonly IRoomChatRouter _router;
     private readonly IAudioDeviceCatalog _audioDevices;
     private readonly ICapturePipeline _pipeline;
     private readonly NetworkOptions _options;
@@ -44,6 +46,15 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private ChatViewModel? _activeChat;
 
+    [ObservableProperty]
+    private RoomViewModel? _activeRoom;
+
+    [ObservableProperty]
+    private string _newRoomName = "Sala";
+
+    [ObservableProperty]
+    private string _roomStatusText = "Nenhuma sala ativa";
+
     public MainViewModel(
         IIdentityStore identity,
         IDiscoveryService discovery,
@@ -52,6 +63,8 @@ public sealed partial class MainViewModel : ObservableObject
         IChatStore chatStore,
         IScreenShareSession screenShare,
         IVoiceSession voice,
+        IRoomService rooms,
+        IRoomChatRouter router,
         IAudioDeviceCatalog audioDevices,
         ICapturePipeline pipeline,
         NetworkOptions options)
@@ -63,6 +76,8 @@ public sealed partial class MainViewModel : ObservableObject
         _chatStore = chatStore;
         _screenShare = screenShare;
         _voice = voice;
+        _rooms = rooms;
+        _router = router;
         _audioDevices = audioDevices;
         _pipeline = pipeline;
         _options = options;
@@ -72,6 +87,7 @@ public sealed partial class MainViewModel : ObservableObject
         _discovery.PeerAppeared += OnPeerAppeared;
         _discovery.PeerUpdated += OnPeerUpdated;
         _discovery.PeerLost += OnPeerLost;
+        _rooms.MembersChanged += OnRoomMembersChanged;
 
         UpdateStatusText();
     }
@@ -171,6 +187,70 @@ public sealed partial class MainViewModel : ObservableObject
         StatusText =
             $"Discovery: {_options.DiscoveryPort}  Session: {_options.SessionPort}  " +
             $"Mídia: {_options.MediaPort}  Peers: {Peers.Count}";
+    }
+
+    private void OnRoomMembersChanged() => Application.Current.Dispatcher.Invoke(SyncRoomState);
+
+    private void SyncRoomState()
+    {
+        if (_rooms.IsInRoom)
+        {
+            if (ActiveRoom is null)
+            {
+                var room = new RoomViewModel(
+                    _rooms,
+                    _router,
+                    _chatStore,
+                    _identity,
+                    _screenShare,
+                    _voice,
+                    _audioDevices,
+                    _pipeline);
+
+                ActiveRoom = room;
+                _ = room.LoadHistoryAsync();
+            }
+
+            RoomStatusText = $"{_rooms.RoomName} · {_rooms.Members.Count} membro(s)";
+            return;
+        }
+
+        ActiveRoom?.Dispose();
+        ActiveRoom = null;
+        RoomStatusText = "Nenhuma sala ativa";
+    }
+
+    [RelayCommand]
+    private void CreateRoom()
+    {
+        _rooms.CreateRoom(NewRoomName);
+        SyncRoomState();
+    }
+
+    [RelayCommand]
+    private async Task InviteSelectedPeerAsync()
+    {
+        if (SelectedPeer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _rooms.InviteAsync(SelectedPeer.Id, CancellationToken.None);
+            SyncRoomState();
+        }
+        catch (Exception ex)
+        {
+            RoomStatusText = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task LeaveRoomAsync()
+    {
+        await _rooms.LeaveAsync();
+        SyncRoomState();
     }
 
     [RelayCommand]
