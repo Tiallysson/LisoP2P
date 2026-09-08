@@ -11,6 +11,12 @@ public sealed class VoiceSession : IVoiceSession
     private static readonly TimeSpan SpeakingWindow = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan StatsInterval = TimeSpan.FromSeconds(1);
 
+    private sealed class RemoteVoice
+    {
+        public required IAudioDecoder Decoder { get; init; }
+        public required JitterBuffer Buffer { get; init; }
+    }
+
     private readonly NetworkOptions _options;
     private readonly IIdentityStore _identity;
     private readonly IDiscoveryService _discovery;
@@ -23,17 +29,21 @@ public sealed class VoiceSession : IVoiceSession
     private readonly Func<AudioSettings, IAudioEncoder> _encoderFactory;
     private readonly Func<AudioSettings, IAudioDecoder> _decoderFactory;
 
+    /// <summary>
+    /// One jitter buffer per sender. Sequence numbers are per sender, so folding several sources
+    /// into a single buffer would make every packet look out of order to the one before it.
+    /// </summary>
+    private readonly ConcurrentDictionary<Guid, RemoteVoice> _remotes = new();
+
     private readonly ConcurrentDictionary<Guid, IPeerSession> _observed = new();
+    private readonly IAudioMixer _mixer;
     private readonly object _sync = new();
 
     private Timer? _statsTimer;
     private IAudioEncoder? _encoder;
-    private IAudioDecoder? _decoder;
-    private JitterBuffer? _jitter;
-    private IPEndPoint? _destination;
+    private List<IPEndPoint> _destinations = [];
+    private List<PeerId> _targets = [];
     private AudioSettings _settings = new();
-    private PeerId? _target;
-    private PeerId? _receivingFrom;
     private DateTimeOffset _lastPeerPacketAt;
     private int _packetsReceived;
     private bool _active;
@@ -41,9 +51,19 @@ public sealed class VoiceSession : IVoiceSession
 
     public bool IsActive => _active;
     public bool IsTransmitting => _transmitting;
-    public bool IsReceiving => _receivingFrom is not null;
+    public bool IsReceiving => !_remotes.IsEmpty;
     public bool IsPeerSpeaking => DateTimeOffset.UtcNow - _lastPeerPacketAt < SpeakingWindow;
-    public PeerId? Target => _target;
+
+    public IReadOnlyList<PeerId> Targets
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return [.. _targets];
+            }
+        }
+    }
 
     public float Volume
     {
@@ -66,7 +86,8 @@ public sealed class VoiceSession : IVoiceSession
         IAudioPlayback playback,
         IMediaLogger logger,
         Func<AudioSettings, IAudioEncoder>? encoderFactory = null,
-        Func<AudioSettings, IAudioDecoder>? decoderFactory = null)
+        Func<AudioSettings, IAudioDecoder>? decoderFactory = null,
+        IAudioMixer? mixer = null)
     {
         _options = options;
         _identity = identity;
@@ -79,6 +100,7 @@ public sealed class VoiceSession : IVoiceSession
         _logger = logger;
         _encoderFactory = encoderFactory ?? (settings => new OpusAudioEncoder(settings));
         _decoderFactory = decoderFactory ?? (settings => new OpusAudioDecoder(settings));
+        _mixer = mixer ?? new AudioMixer(ResolveBuffer);
     }
 
     public Task StartAsync(CancellationToken ct)
@@ -100,26 +122,25 @@ public sealed class VoiceSession : IVoiceSession
         return Task.CompletedTask;
     }
 
-    public async Task StartVoiceAsync(PeerId target, AudioSettings settings, CancellationToken ct)
+    public async Task StartVoiceAsync(IReadOnlyCollection<PeerId> targets, AudioSettings settings, CancellationToken ct)
     {
         if (_active)
         {
             await StopVoiceAsync().ConfigureAwait(false);
         }
 
-        var peer = _discovery.Peers.FirstOrDefault(p => p.Id == target)
-            ?? throw new InvalidOperationException("O peer não está mais visível na rede.");
+        var connected = targets.Where(IsConnected).ToList();
 
-        if (!_sessionManager.Sessions.TryGetValue(target, out var session) || session.State != SessionState.Connected)
+        if (connected.Count == 0)
         {
-            throw new InvalidOperationException("A sessão com o peer não está conectada.");
+            throw new InvalidOperationException("Nenhum destinatário conectado para receber a voz.");
         }
 
         lock (_sync)
         {
             _settings = settings;
-            _target = target;
-            _destination = new IPEndPoint(peer.Address, ResolveMediaPort(peer));
+            _targets = connected;
+            _destinations = MediaEndpoints.ResolveAll(_discovery, connected);
             _encoder = _encoderFactory(settings);
             _active = true;
         }
@@ -127,21 +148,48 @@ public sealed class VoiceSession : IVoiceSession
         _playback.SetSource(PullPlayback);
         _playback.Start(settings);
 
-        await SendAsync(session, MessageType.VoiceStart, VoicePayloadCodec.Encode(new VoicePayload
-        {
-            SampleRate = settings.SampleRate,
-            Channels = settings.Channels,
-            FrameSamples = settings.FrameSamples,
-        })).ConfigureAwait(false);
+        await AnnounceVoiceStartAsync(connected).ConfigureAwait(false);
 
-        _logger.Info($"Voz ativa com {peer.Nickname} em {_destination} ({settings.Mode}).");
-        Log?.Invoke($"Voz ativa com {peer.Nickname}.");
+        _logger.Info($"Voz ativa com {connected.Count} peer(s) ({settings.Mode}).");
+        Log?.Invoke($"Voz ativa com {connected.Count} peer(s).");
+        StateChanged?.Invoke();
+    }
+
+    public async Task UpdateTargetsAsync(IReadOnlyCollection<PeerId> targets)
+    {
+        if (!_active)
+        {
+            return;
+        }
+
+        var connected = targets.Where(IsConnected).ToList();
+
+        if (connected.Count == 0)
+        {
+            await StopVoiceAsync().ConfigureAwait(false);
+            return;
+        }
+
+        List<PeerId> added;
+
+        lock (_sync)
+        {
+            added = [.. connected.Where(peer => !_targets.Contains(peer))];
+            _targets = connected;
+            _destinations = MediaEndpoints.ResolveAll(_discovery, connected);
+        }
+
+        if (added.Count > 0)
+        {
+            await AnnounceVoiceStartAsync(added).ConfigureAwait(false);
+        }
+
         StateChanged?.Invoke();
     }
 
     public async Task StopVoiceAsync()
     {
-        PeerId? target;
+        List<PeerId> targets;
 
         lock (_sync)
         {
@@ -150,14 +198,13 @@ public sealed class VoiceSession : IVoiceSession
                 return;
             }
 
-            target = _target;
+            targets = _targets;
             _active = false;
-            _target = null;
-            _destination = null;
+            _targets = [];
+            _destinations = [];
         }
 
         SetTransmitting(false);
-        _playback.Stop();
 
         lock (_sync)
         {
@@ -165,9 +212,17 @@ public sealed class VoiceSession : IVoiceSession
             _encoder = null;
         }
 
-        if (target is not null && _sessionManager.Sessions.TryGetValue(target, out var session))
+        foreach (var target in targets)
         {
-            await SendAsync(session, MessageType.VoiceStop, []).ConfigureAwait(false);
+            if (_sessionManager.Sessions.TryGetValue(target, out var session))
+            {
+                await SendAsync(session, MessageType.VoiceStop, []).ConfigureAwait(false);
+            }
+        }
+
+        if (!IsReceiving)
+        {
+            _playback.Stop();
         }
 
         _logger.Info("Voz encerrada.");
@@ -192,6 +247,8 @@ public sealed class VoiceSession : IVoiceSession
             _transmitting = transmitting;
         }
 
+        // Releasing push-to-talk has to stop the capture device, not merely stop sending: a mic
+        // that keeps running is both a battery cost and a privacy surprise.
         if (transmitting)
         {
             _capture.Start(_settings);
@@ -236,17 +293,18 @@ public sealed class VoiceSession : IVoiceSession
         }
     }
 
-    private float[]? PullPlayback()
-    {
-        var jitter = _jitter;
+    private bool IsConnected(PeerId peer) =>
+        _sessionManager.Sessions.TryGetValue(peer, out var session) && session.State == SessionState.Connected;
 
-        return jitter?.Pull();
-    }
+    private IJitterBuffer? ResolveBuffer(PeerId peer) =>
+        _remotes.TryGetValue(peer.Value, out var remote) ? remote.Buffer : null;
+
+    private float[]? PullPlayback() => _mixer.MixNextFrame();
 
     private void OnFrameCaptured(AudioFrame frame)
     {
         IAudioEncoder? encoder;
-        IPEndPoint? destination;
+        List<IPEndPoint> destinations;
 
         lock (_sync)
         {
@@ -256,17 +314,18 @@ public sealed class VoiceSession : IVoiceSession
             }
 
             encoder = _encoder;
-            destination = _destination;
+            destinations = _destinations;
         }
 
-        if (encoder is null || destination is null)
+        if (encoder is null || destinations.Count == 0)
         {
             return;
         }
 
         try
         {
-            _sender.SendAudio(encoder.Encode(frame), destination);
+            // One encode, N sends - the same Opus frame goes to every member.
+            _sender.SendAudio(encoder.Encode(frame), destinations);
         }
         catch (Exception ex)
         {
@@ -281,19 +340,102 @@ public sealed class VoiceSession : IVoiceSession
         SetTransmitting(false);
     }
 
-    private void OnAudioPacketReceived(uint sequenceNumber, byte[] opusData)
+    private void OnAudioPacketReceived(PeerId sender, uint sequenceNumber, byte[] opusData)
     {
-        var jitter = _jitter;
+        var remote = EnsureRemote(sender);
 
-        if (jitter is null || _receivingFrom is null)
+        if (remote is null)
         {
             return;
         }
 
         Interlocked.Increment(ref _packetsReceived);
         _lastPeerPacketAt = DateTimeOffset.UtcNow;
-        jitter.Push(sequenceNumber, opusData, DateTimeOffset.UtcNow.UtcTicks);
+        remote.Buffer.Push(sequenceNumber, opusData, DateTimeOffset.UtcNow.UtcTicks);
     }
+
+    /// <summary>
+    /// Audio is always 48 kHz mono in 20 ms frames on the wire, so a buffer can be built on the
+    /// first packet even when the VoiceStart that announced it was lost.
+    /// </summary>
+    private RemoteVoice? EnsureRemote(PeerId sender)
+    {
+        if (_remotes.TryGetValue(sender.Value, out var existing))
+        {
+            return existing;
+        }
+
+        AudioSettings settings;
+
+        lock (_sync)
+        {
+            settings = _settings;
+        }
+
+        return AddRemote(sender, settings with
+        {
+            SampleRate = AudioSettings.DefaultSampleRate,
+            Channels = AudioSettings.DefaultChannels,
+            FrameSamples = AudioSettings.DefaultFrameSamples,
+        });
+    }
+
+    private RemoteVoice? AddRemote(PeerId sender, AudioSettings settings)
+    {
+        IAudioDecoder decoder;
+
+        try
+        {
+            decoder = _decoderFactory(settings);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Falha ao iniciar o decoder de áudio.", ex);
+            Log?.Invoke($"Falha ao iniciar o decoder de áudio: {ex.Message}");
+            return null;
+        }
+
+        var created = new RemoteVoice { Decoder = decoder, Buffer = new JitterBuffer(decoder) };
+        var stored = _remotes.GetOrAdd(sender.Value, created);
+
+        if (!ReferenceEquals(stored, created))
+        {
+            decoder.Dispose();
+            return stored;
+        }
+
+        RefreshMixerSources();
+
+        if (!_playback.IsRunning)
+        {
+            _playback.SetSource(PullPlayback);
+            _playback.Start(settings);
+        }
+
+        StateChanged?.Invoke();
+        return stored;
+    }
+
+    private void RemoveRemote(PeerId sender)
+    {
+        if (!_remotes.TryRemove(sender.Value, out var remote))
+        {
+            return;
+        }
+
+        remote.Decoder.Dispose();
+        RefreshMixerSources();
+
+        if (_remotes.IsEmpty && !_active)
+        {
+            _playback.Stop();
+        }
+
+        StateChanged?.Invoke();
+    }
+
+    private void RefreshMixerSources() =>
+        _mixer.SetActiveSources([.. _remotes.Keys.Select(id => new PeerId(id))]);
 
     private void OnSessionOpened(IPeerSession session)
     {
@@ -304,34 +446,61 @@ public sealed class VoiceSession : IVoiceSession
 
         session.MessageReceived += envelope => OnMessageReceived(session, envelope);
 
-        if (_active && _target == session.RemoteId)
+        bool isTarget;
+
+        lock (_sync)
         {
-            _ = ResendVoiceStartAsync(session);
+            isTarget = _active && _targets.Contains(session.RemoteId);
+        }
+
+        if (isTarget)
+        {
+            _ = AnnounceVoiceStartAsync([session.RemoteId]);
         }
     }
 
-    private async Task ResendVoiceStartAsync(IPeerSession session)
+    private async Task AnnounceVoiceStartAsync(IReadOnlyCollection<PeerId> targets)
     {
-        await SendAsync(session, MessageType.VoiceStart, VoicePayloadCodec.Encode(new VoicePayload
+        AudioSettings settings;
+
+        lock (_sync)
         {
-            SampleRate = _settings.SampleRate,
-            Channels = _settings.Channels,
-            FrameSamples = _settings.FrameSamples,
-        })).ConfigureAwait(false);
+            settings = _settings;
+        }
+
+        var payload = VoicePayloadCodec.Encode(new VoicePayload
+        {
+            SampleRate = settings.SampleRate,
+            Channels = settings.Channels,
+            FrameSamples = settings.FrameSamples,
+        });
+
+        foreach (var target in targets)
+        {
+            if (_sessionManager.Sessions.TryGetValue(target, out var session))
+            {
+                await SendAsync(session, MessageType.VoiceStart, payload).ConfigureAwait(false);
+            }
+        }
     }
 
     private void OnSessionClosed(PeerId id)
     {
         _observed.TryRemove(id.Value, out _);
+        RemoveRemote(id);
 
-        if (_target == id)
+        bool wasTarget;
+        List<PeerId> remaining;
+
+        lock (_sync)
         {
-            _ = StopVoiceAsync();
+            wasTarget = _active && _targets.Contains(id);
+            remaining = [.. _targets.Where(peer => peer != id)];
         }
 
-        if (_receivingFrom == id)
+        if (wasTarget)
         {
-            StopReceiving();
+            _ = UpdateTargetsAsync(remaining);
         }
     }
 
@@ -343,11 +512,7 @@ public sealed class VoiceSession : IVoiceSession
                 HandleVoiceStart(session, envelope);
                 break;
             case MessageType.VoiceStop:
-                if (_receivingFrom == session.RemoteId)
-                {
-                    StopReceiving();
-                }
-
+                RemoveRemote(session.RemoteId);
                 break;
         }
     }
@@ -359,6 +524,11 @@ public sealed class VoiceSession : IVoiceSession
             return;
         }
 
+        if (_remotes.ContainsKey(session.RemoteId.Value))
+        {
+            return;
+        }
+
         var settings = new AudioSettings
         {
             SampleRate = payload.SampleRate,
@@ -366,60 +536,14 @@ public sealed class VoiceSession : IVoiceSession
             FrameSamples = payload.FrameSamples,
         };
 
-        lock (_sync)
+        if (AddRemote(session.RemoteId, settings) is null)
         {
-            _jitter = null;
-            _decoder?.Dispose();
-
-            try
-            {
-                _decoder = _decoderFactory(settings);
-            }
-            catch (Exception ex)
-            {
-                _decoder = null;
-                _logger.Error("Falha ao iniciar o decoder de áudio.", ex);
-                Log?.Invoke($"Falha ao iniciar o decoder de áudio: {ex.Message}");
-                return;
-            }
-
-            _jitter = new JitterBuffer(_decoder);
-            _receivingFrom = session.RemoteId;
-            _packetsReceived = 0;
-        }
-
-        if (!_playback.IsRunning)
-        {
-            _playback.SetSource(PullPlayback);
-            _playback.Start(settings);
+            return;
         }
 
         _logger.Info($"Recebendo voz de {session.RemoteNickname}: {payload.SampleRate}Hz {payload.FrameSamples} amostras.");
         Log?.Invoke($"Recebendo voz de {session.RemoteNickname}.");
-        StateChanged?.Invoke();
     }
-
-    private void StopReceiving()
-    {
-        lock (_sync)
-        {
-            _receivingFrom = null;
-            _jitter = null;
-            _decoder?.Dispose();
-            _decoder = null;
-        }
-
-        if (!_active)
-        {
-            _playback.Stop();
-        }
-
-        _logger.Info("Recepção de voz encerrada.");
-        StateChanged?.Invoke();
-    }
-
-    private int ResolveMediaPort(DiscoveredPeer peer) =>
-        peer.MediaPort is > 0 and <= 65535 ? peer.MediaPort : NetworkOptions.DefaultMediaPort;
 
     private async Task SendAsync(IPeerSession session, MessageType type, byte[] payload)
     {
@@ -449,15 +573,16 @@ public sealed class VoiceSession : IVoiceSession
             return;
         }
 
-        var jitter = _jitter;
+        var remotes = _remotes.Values.ToArray();
 
         StatsUpdated.Invoke(new VoiceStats(
-            jitter?.Depth ?? 0,
-            jitter?.ConcealedFrames ?? 0,
-            jitter?.LateDiscards ?? 0,
-            jitter?.OverflowDiscards ?? 0,
+            remotes.Sum(r => r.Buffer.Depth),
+            remotes.Sum(r => r.Buffer.ConcealedFrames),
+            remotes.Sum(r => r.Buffer.LateDiscards),
+            remotes.Sum(r => r.Buffer.OverflowDiscards),
             _sender.AudioPacketsSent,
-            Volatile.Read(ref _packetsReceived)));
+            Volatile.Read(ref _packetsReceived),
+            remotes.Length));
     }
 
     public async ValueTask DisposeAsync()
@@ -476,7 +601,11 @@ public sealed class VoiceSession : IVoiceSession
             _statsTimer = null;
         }
 
-        StopReceiving();
+        foreach (var id in _remotes.Keys.ToArray())
+        {
+            RemoveRemote(new PeerId(id));
+        }
+
         _capture.Dispose();
         _playback.Dispose();
     }

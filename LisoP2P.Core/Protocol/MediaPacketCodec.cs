@@ -4,13 +4,28 @@ namespace LisoP2P.Core.Protocol;
 
 public static class MediaPacketCodec
 {
-    public const byte CurrentVersion = 1;
+    /// <summary>
+    /// Version 2 added the 16-byte SenderId. In a mesh the receive socket takes datagrams from
+    /// several senders at once, so the sender can no longer be inferred from "the only peer on the
+    /// other end" — and inferring it from the source endpoint breaks when NAT or Radmin remaps the
+    /// port. A version-1 packet no longer decodes: the field is not optional.
+    /// </summary>
+    public const byte CurrentVersion = 2;
+
     public const byte KeyframeFlag = 1;
     public const byte DefaultStreamId = 0;
     public const byte VideoStreamId = 0;
     public const byte AudioStreamId = 1;
 
-    public const int HeaderSize = 13;
+    private const int SenderIdOffset = 2;
+    private const int SenderIdSize = 16;
+    private const int FrameIdOffset = SenderIdOffset + SenderIdSize;
+    private const int FragmentIndexOffset = FrameIdOffset + 4;
+    private const int FragmentCountOffset = FragmentIndexOffset + 2;
+    private const int FlagsOffset = FragmentCountOffset + 2;
+    private const int PayloadLengthOffset = FlagsOffset + 1;
+
+    public const int HeaderSize = PayloadLengthOffset + 2;
     public const int MaxPayloadSize = 1200;
     public const int MaxPacketSize = HeaderSize + MaxPayloadSize;
 
@@ -30,11 +45,12 @@ public static class MediaPacketCodec
 
         destination[0] = header.Version;
         destination[1] = header.StreamId;
-        BinaryPrimitives.WriteUInt32LittleEndian(destination[2..], header.FrameId);
-        BinaryPrimitives.WriteUInt16LittleEndian(destination[6..], header.FragmentIndex);
-        BinaryPrimitives.WriteUInt16LittleEndian(destination[8..], header.FragmentCount);
-        destination[10] = header.Flags;
-        BinaryPrimitives.WriteUInt16LittleEndian(destination[11..], (ushort)payload.Length);
+        header.SenderId.TryWriteBytes(destination.Slice(SenderIdOffset, SenderIdSize));
+        BinaryPrimitives.WriteUInt32LittleEndian(destination[FrameIdOffset..], header.FrameId);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination[FragmentIndexOffset..], header.FragmentIndex);
+        BinaryPrimitives.WriteUInt16LittleEndian(destination[FragmentCountOffset..], header.FragmentCount);
+        destination[FlagsOffset] = header.Flags;
+        BinaryPrimitives.WriteUInt16LittleEndian(destination[PayloadLengthOffset..], (ushort)payload.Length);
         payload.CopyTo(destination[HeaderSize..]);
 
         return total;
@@ -57,9 +73,16 @@ public static class MediaPacketCodec
             return false;
         }
 
-        var fragmentIndex = BinaryPrimitives.ReadUInt16LittleEndian(packet[6..]);
-        var fragmentCount = BinaryPrimitives.ReadUInt16LittleEndian(packet[8..]);
-        var payloadLength = BinaryPrimitives.ReadUInt16LittleEndian(packet[11..]);
+        var senderId = new Guid(packet.Slice(SenderIdOffset, SenderIdSize));
+
+        if (senderId == Guid.Empty)
+        {
+            return false;
+        }
+
+        var fragmentIndex = BinaryPrimitives.ReadUInt16LittleEndian(packet[FragmentIndexOffset..]);
+        var fragmentCount = BinaryPrimitives.ReadUInt16LittleEndian(packet[FragmentCountOffset..]);
+        var payloadLength = BinaryPrimitives.ReadUInt16LittleEndian(packet[PayloadLengthOffset..]);
 
         if (fragmentCount == 0 || fragmentIndex >= fragmentCount)
         {
@@ -74,10 +97,11 @@ public static class MediaPacketCodec
         header = new MediaPacketHeader(
             version,
             packet[1],
-            BinaryPrimitives.ReadUInt32LittleEndian(packet[2..]),
+            senderId,
+            BinaryPrimitives.ReadUInt32LittleEndian(packet[FrameIdOffset..]),
             fragmentIndex,
             fragmentCount,
-            packet[10],
+            packet[FlagsOffset],
             payloadLength);
 
         payload = packet.Slice(HeaderSize, payloadLength);

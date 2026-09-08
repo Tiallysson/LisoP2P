@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
+using LisoP2P.Core;
 using LisoP2P.Core.Protocol;
 using LisoP2P.Media;
 
@@ -10,6 +11,7 @@ public sealed class UdpMediaSender : IMediaSender
 {
     private readonly Socket _socket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
     private readonly object _sync = new();
+    private readonly Guid _senderId;
 
     private uint _frameId;
     private uint _audioSequence;
@@ -20,9 +22,16 @@ public sealed class UdpMediaSender : IMediaSender
     public long BytesSent { get; private set; }
     public int DroppedFrames { get; private set; }
 
-    public void SendAudio(ReadOnlySpan<byte> opusData, IPEndPoint destination)
+    /// <summary>
+    /// The identity is stamped into every packet here rather than passed per call, so no send path
+    /// can forget it and leave the receiver unable to tell mesh senders apart.
+    /// </summary>
+    public UdpMediaSender(IIdentityStore identity) => _senderId = identity.Id.Value;
+
+    public void SendAudio(ReadOnlySpan<byte> opusData, IReadOnlyCollection<IPEndPoint> destinations)
     {
-        if (_disposed || opusData.Length == 0 || opusData.Length > MediaPacketCodec.MaxPayloadSize)
+        if (_disposed || opusData.Length == 0 || opusData.Length > MediaPacketCodec.MaxPayloadSize
+            || destinations.Count == 0)
         {
             return;
         }
@@ -32,6 +41,7 @@ public sealed class UdpMediaSender : IMediaSender
             var header = new MediaPacketHeader(
                 MediaPacketCodec.CurrentVersion,
                 MediaPacketCodec.AudioStreamId,
+                _senderId,
                 unchecked(_audioSequence++),
                 0,
                 1,
@@ -43,15 +53,16 @@ public sealed class UdpMediaSender : IMediaSender
             try
             {
                 var written = MediaPacketCodec.Encode(buffer, header, opusData);
-                _socket.SendTo(buffer.AsSpan(0, written), SocketFlags.None, destination);
-                BytesSent += written;
+
+                foreach (var destination in destinations)
+                {
+                    if (TrySend(buffer.AsSpan(0, written), destination))
+                    {
+                        BytesSent += written;
+                    }
+                }
+
                 AudioPacketsSent++;
-            }
-            catch (SocketException)
-            {
-            }
-            catch (ObjectDisposedException)
-            {
             }
             finally
             {
@@ -60,9 +71,9 @@ public sealed class UdpMediaSender : IMediaSender
         }
     }
 
-    public void SendFrame(EncodedFrame frame, IPEndPoint destination)
+    public void SendFrame(EncodedFrame frame, IReadOnlyCollection<IPEndPoint> destinations)
     {
-        if (_disposed || frame.Data.Length == 0)
+        if (_disposed || frame.Data.Length == 0 || destinations.Count == 0)
         {
             return;
         }
@@ -90,7 +101,8 @@ public sealed class UdpMediaSender : IMediaSender
 
                     var header = new MediaPacketHeader(
                         MediaPacketCodec.CurrentVersion,
-                        MediaPacketCodec.DefaultStreamId,
+                        MediaPacketCodec.VideoStreamId,
+                        _senderId,
                         frameId,
                         (ushort)index,
                         (ushort)fragmentCount,
@@ -99,17 +111,12 @@ public sealed class UdpMediaSender : IMediaSender
 
                     var written = MediaPacketCodec.Encode(buffer, header, frame.Data.AsSpan(offset, length));
 
-                    try
+                    foreach (var destination in destinations)
                     {
-                        _socket.SendTo(buffer.AsSpan(0, written), SocketFlags.None, destination);
-                        BytesSent += written;
-                    }
-                    catch (SocketException)
-                    {
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                        return;
+                        if (TrySend(buffer.AsSpan(0, written), destination))
+                        {
+                            BytesSent += written;
+                        }
                     }
                 }
 
@@ -119,6 +126,23 @@ public sealed class UdpMediaSender : IMediaSender
             {
                 ArrayPool<byte>.Shared.Return(buffer);
             }
+        }
+    }
+
+    private bool TrySend(ReadOnlySpan<byte> packet, IPEndPoint destination)
+    {
+        try
+        {
+            _socket.SendTo(packet, SocketFlags.None, destination);
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
         }
     }
 

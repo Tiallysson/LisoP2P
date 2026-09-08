@@ -6,10 +6,13 @@ namespace LisoP2P.Tests;
 
 public class FrameReassemblerTests
 {
+    private static readonly Guid Sender = Guid.Parse("77777777-0000-0000-0000-000000000001");
+
     private static MediaPacketHeader Header(uint frameId, int index, int count, bool keyframe = false) =>
         new(
             MediaPacketCodec.CurrentVersion,
             MediaPacketCodec.DefaultStreamId,
+            Sender,
             frameId,
             (ushort)index,
             (ushort)count,
@@ -37,6 +40,7 @@ public class FrameReassemblerTests
             var header = new MediaPacketHeader(
                 MediaPacketCodec.CurrentVersion,
                 MediaPacketCodec.DefaultStreamId,
+                Sender,
                 frameId,
                 (ushort)index,
                 (ushort)fragments.Length,

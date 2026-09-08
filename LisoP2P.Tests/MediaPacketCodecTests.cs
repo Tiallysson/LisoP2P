@@ -4,6 +4,8 @@ namespace LisoP2P.Tests;
 
 public class MediaPacketCodecTests
 {
+    private static readonly Guid Sender = Guid.Parse("11111111-2222-3333-4444-555555555555");
+
     [Fact]
     public void Encode_Decode_RoundTripsHeaderAndPayload()
     {
@@ -11,6 +13,7 @@ public class MediaPacketCodecTests
         var header = new MediaPacketHeader(
             MediaPacketCodec.CurrentVersion,
             MediaPacketCodec.DefaultStreamId,
+            Sender,
             4242,
             3,
             9,
@@ -34,7 +37,7 @@ public class MediaPacketCodecTests
         var buffer = new byte[MediaPacketCodec.HeaderSize + payload.Length];
         MediaPacketCodec.Encode(
             buffer,
-            new MediaPacketHeader(MediaPacketCodec.CurrentVersion, 0, 1, 0, 1, 0, (ushort)payload.Length),
+            new MediaPacketHeader(MediaPacketCodec.CurrentVersion, 0, Sender, 1, 0, 1, 0, (ushort)payload.Length),
             payload);
 
         Assert.False(MediaPacketCodec.TryDecode(buffer.AsSpan(0, buffer.Length - 1), out _, out _));
@@ -47,7 +50,7 @@ public class MediaPacketCodecTests
         var buffer = new byte[MediaPacketCodec.HeaderSize + payload.Length];
         MediaPacketCodec.Encode(
             buffer,
-            new MediaPacketHeader(MediaPacketCodec.CurrentVersion, 0, 1, 4, 4, 0, (ushort)payload.Length),
+            new MediaPacketHeader(MediaPacketCodec.CurrentVersion, 0, Sender, 1, 4, 4, 0, (ushort)payload.Length),
             payload);
 
         Assert.False(MediaPacketCodec.TryDecode(buffer, out _, out _));
@@ -68,7 +71,7 @@ public class MediaPacketCodecTests
         var buffer = new byte[MediaPacketCodec.HeaderSize + 1];
         MediaPacketCodec.Encode(
             buffer,
-            new MediaPacketHeader(MediaPacketCodec.CurrentVersion, 0, 1, 0, 1, 0, 1),
+            new MediaPacketHeader(MediaPacketCodec.CurrentVersion, 0, Sender, 1, 0, 1, 0, 1),
             [9]);
         buffer[0] = 200;
 

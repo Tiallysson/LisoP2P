@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using LisoP2P.Core;
 using LisoP2P.Core.Protocol;
 using LisoP2P.Media;
 
@@ -9,26 +11,28 @@ public sealed class UdpMediaReceiver : IMediaReceiver
 {
     private static readonly TimeSpan SweepInterval = TimeSpan.FromMilliseconds(50);
 
-    private readonly FrameReassembler _reassembler = new();
+    /// <summary>
+    /// Bounds how many senders can allocate reassembly state. A mesh this size never needs more,
+    /// and the socket accepts datagrams from anyone, so the dictionary must not grow on demand.
+    /// </summary>
+    private const int MaxSenders = 8;
+
+    private readonly ConcurrentDictionary<Guid, FrameReassembler> _reassemblers = new();
+    private readonly Guid _selfId;
 
     private UdpClient? _socket;
     private CancellationTokenSource? _cts;
     private Task? _receiveLoop;
     private Timer? _sweepTimer;
 
-    public int PendingFrames => _reassembler.PendingCount;
-    public int DroppedFrames => _reassembler.DroppedFrames;
-    public IPAddress? ExpectedSource { get; set; }
+    public int PendingFrames => _reassemblers.Values.Sum(r => r.PendingCount);
+    public int DroppedFrames => _reassemblers.Values.Sum(r => r.DroppedFrames);
 
-    public event Action<DecodableFrame>? FrameReassembled;
-    public event Action? FrameDropped;
-    public event Action<uint, byte[]>? AudioPacketReceived;
+    public event Action<PeerId, DecodableFrame>? FrameReassembled;
+    public event Action<PeerId>? FrameDropped;
+    public event Action<PeerId, uint, byte[]>? AudioPacketReceived;
 
-    public UdpMediaReceiver()
-    {
-        _reassembler.FrameReassembled += frame => FrameReassembled?.Invoke(frame);
-        _reassembler.FrameDropped += () => FrameDropped?.Invoke();
-    }
+    public UdpMediaReceiver(IIdentityStore identity) => _selfId = identity.Id.Value;
 
     public Task StartAsync(int mediaPort, CancellationToken ct)
     {
@@ -44,12 +48,34 @@ public sealed class UdpMediaReceiver : IMediaReceiver
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _receiveLoop = Task.Run(() => ReceiveLoopAsync(_cts.Token), CancellationToken.None);
-        _sweepTimer = new Timer(_ => _reassembler.CollectExpired(), null, SweepInterval, SweepInterval);
+        _sweepTimer = new Timer(_ => Sweep(), null, SweepInterval, SweepInterval);
 
         return Task.CompletedTask;
     }
 
-    public void Reset() => _reassembler.Reset();
+    public void Reset()
+    {
+        foreach (var reassembler in _reassemblers.Values)
+        {
+            reassembler.Reset();
+        }
+    }
+
+    public void Reset(PeerId sender)
+    {
+        if (_reassemblers.TryGetValue(sender.Value, out var reassembler))
+        {
+            reassembler.Reset();
+        }
+    }
+
+    private void Sweep()
+    {
+        foreach (var reassembler in _reassemblers.Values)
+        {
+            reassembler.CollectExpired();
+        }
+    }
 
     private async Task ReceiveLoopAsync(CancellationToken ct)
     {
@@ -74,30 +100,59 @@ public sealed class UdpMediaReceiver : IMediaReceiver
                 continue;
             }
 
-            var expected = ExpectedSource;
-
-            if (expected is not null && !expected.Equals(result.RemoteEndPoint.Address))
-            {
-                continue;
-            }
-
             if (!MediaPacketCodec.TryDecode(result.Buffer, out var header, out var payload))
             {
                 continue;
             }
 
+            if (header.SenderId == _selfId)
+            {
+                continue;
+            }
+
+            var sender = new PeerId(header.SenderId);
+
             if (header.StreamId == MediaPacketCodec.AudioStreamId)
             {
+                // An Opus voice frame always fits one datagram, so a fragmented audio packet is
+                // malformed and never worth reassembling.
                 if (header.FragmentCount == 1)
                 {
-                    AudioPacketReceived?.Invoke(header.FrameId, payload.ToArray());
+                    AudioPacketReceived?.Invoke(sender, header.FrameId, payload.ToArray());
                 }
 
                 continue;
             }
 
-            _reassembler.Add(header, payload);
+            if (!TryGetReassembler(header.SenderId, out var reassembler))
+            {
+                continue;
+            }
+
+            reassembler.Add(header, payload);
         }
+    }
+
+    private bool TryGetReassembler(Guid senderId, out FrameReassembler reassembler)
+    {
+        if (_reassemblers.TryGetValue(senderId, out reassembler!))
+        {
+            return true;
+        }
+
+        if (_reassemblers.Count >= MaxSenders)
+        {
+            reassembler = null!;
+            return false;
+        }
+
+        var sender = new PeerId(senderId);
+        var created = new FrameReassembler();
+        created.FrameReassembled += frame => FrameReassembled?.Invoke(sender, frame);
+        created.FrameDropped += () => FrameDropped?.Invoke(sender);
+
+        reassembler = _reassemblers.GetOrAdd(senderId, created);
+        return true;
     }
 
     public async ValueTask DisposeAsync()
@@ -126,5 +181,6 @@ public sealed class UdpMediaReceiver : IMediaReceiver
         _socket = null;
         _cts?.Dispose();
         _cts = null;
+        _reassemblers.Clear();
     }
 }

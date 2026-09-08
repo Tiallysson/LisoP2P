@@ -160,7 +160,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
 
         try
         {
-            await _voice.StartVoiceAsync(_peerId, BuildAudioSettings(), CancellationToken.None);
+            await _voice.StartVoiceAsync([_peerId], BuildAudioSettings(), CancellationToken.None);
 
             if (OpenMicrophone)
             {
@@ -194,7 +194,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
 
     private void RefreshVoiceState()
     {
-        IsVoiceActive = _voice.IsActive && _voice.Target == _peerId;
+        IsVoiceActive = _voice.IsActive && _voice.Targets.Contains(_peerId);
         IsTransmittingVoice = _voice.IsTransmitting;
         IsPeerSpeaking = _voice.IsPeerSpeaking;
 
@@ -258,7 +258,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
 
         try
         {
-            await _screenShare.StartSharingAsync(_peerId, monitor.Index, new CaptureSettings(), CancellationToken.None);
+            await _screenShare.StartSharingAsync([_peerId], monitor.Index, new CaptureSettings(), CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -274,7 +274,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
 
     private void RefreshShareState()
     {
-        IsSharing = _screenShare.IsSharing && _screenShare.SharingWith == _peerId;
+        IsSharing = _screenShare.IsSharing && _screenShare.SharingWith.Contains(_peerId);
         IsWatching = _screenShare.IsWatching && _screenShare.WatchingFrom == _peerId;
         CanShare = !IsSharing && _session?.State == SessionState.Connected;
 

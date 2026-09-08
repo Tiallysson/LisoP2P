@@ -131,7 +131,7 @@ public class ScreenShareSessionTests
         harness.Discovery.Known.Add(new DiscoveredPeer(
             RemoteId, "peer", IPAddress.Parse("192.168.0.42"), 47101, 47999, DateTimeOffset.UtcNow));
 
-        await harness.Share.StartSharingAsync(RemoteId, 0, new CaptureSettings { TargetHeight = 720, TargetFps = 30 }, CancellationToken.None);
+        await harness.Share.StartSharingAsync([RemoteId], 0, new CaptureSettings { TargetHeight = 720, TargetFps = 30 }, CancellationToken.None);
 
         var start = Assert.Single(session.Sent, envelope => envelope.Type == MessageType.ScreenShareStart);
         Assert.True(ScreenSharePayloadCodec.TryDecode(start.Payload, out var payload));
@@ -156,7 +156,7 @@ public class ScreenShareSessionTests
         harness.Discovery.Known.Add(new DiscoveredPeer(
             RemoteId, "peer", IPAddress.Loopback, 47101, 47102, DateTimeOffset.UtcNow));
 
-        await harness.Share.StartSharingAsync(RemoteId, 0, new CaptureSettings(), CancellationToken.None);
+        await harness.Share.StartSharingAsync([RemoteId], 0, new CaptureSettings(), CancellationToken.None);
         await harness.Share.StopSharingAsync();
 
         Assert.False(harness.Share.IsSharing);
@@ -178,7 +178,7 @@ public class ScreenShareSessionTests
         harness.Discovery.Known.Add(new DiscoveredPeer(
             RemoteId, "peer", IPAddress.Loopback, 47101, 47102, DateTimeOffset.UtcNow));
 
-        await harness.Share.StartSharingAsync(RemoteId, 0, new CaptureSettings(), CancellationToken.None);
+        await harness.Share.StartSharingAsync([RemoteId], 0, new CaptureSettings(), CancellationToken.None);
 
         session.Receive(MessageType.KeyframeRequest, []);
 
@@ -201,7 +201,7 @@ public class ScreenShareSessionTests
         Assert.True(harness.Share.IsWatching);
         Assert.Equal(1280, harness.Decoder.Width);
         Assert.Equal(720, harness.Decoder.Height);
-        Assert.Equal(IPAddress.Parse("10.0.0.7"), harness.Receiver.ExpectedSource);
+        Assert.Contains(RemoteId, harness.Receiver.ResetSenders);
         Assert.Contains(session.Sent, envelope => envelope.Type == MessageType.KeyframeRequest);
     }
 
@@ -218,19 +218,19 @@ public class ScreenShareSessionTests
 
         session.Receive(MessageType.ScreenShareStart, ShareStart(640, 360, 30));
 
-        harness.Receiver.Emit(new DecodableFrame([1, 2, 3], false, 1));
+        harness.Receiver.Emit(RemoteId, new DecodableFrame([1, 2, 3], false, 1));
         await Task.Delay(50);
         Assert.Empty(harness.Decoder.Decoded);
 
         PreviewFrame? shown = null;
         harness.Share.RemoteFrameReady += frame => shown = frame;
 
-        harness.Receiver.Emit(new DecodableFrame([4, 5, 6], true, 2));
+        harness.Receiver.Emit(RemoteId, new DecodableFrame([4, 5, 6], true, 2));
 
         Assert.True(await WaitForAsync(() => harness.Decoder.Decoded.Count == 1));
         Assert.True(await WaitForAsync(() => shown is not null));
 
-        harness.Receiver.Emit(new DecodableFrame([7], false, 3));
+        harness.Receiver.Emit(RemoteId, new DecodableFrame([7], false, 3));
         Assert.True(await WaitForAsync(() => harness.Decoder.Decoded.Count == 2));
     }
 
@@ -248,7 +248,7 @@ public class ScreenShareSessionTests
 
         Assert.False(harness.Share.IsWatching);
         Assert.True(harness.Decoder.Disposed);
-        Assert.Null(harness.Receiver.ExpectedSource);
+        Assert.Equal(2, harness.Receiver.ResetSenders.Count(id => id == RemoteId));
     }
 
     [Fact]
@@ -262,7 +262,7 @@ public class ScreenShareSessionTests
         harness.Discovery.Known.Add(new DiscoveredPeer(
             RemoteId, "peer", IPAddress.Loopback, 47101, 47102, DateTimeOffset.UtcNow));
 
-        await harness.Share.StartSharingAsync(RemoteId, 0, new CaptureSettings(), CancellationToken.None);
+        await harness.Share.StartSharingAsync([RemoteId], 0, new CaptureSettings(), CancellationToken.None);
         session.Receive(MessageType.ScreenShareStart, ShareStart(640, 360, 30));
 
         harness.Sessions.Close(RemoteId);

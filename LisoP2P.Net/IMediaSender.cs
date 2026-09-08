@@ -10,6 +10,11 @@ public interface IMediaSender : IDisposable
 
     uint AudioPacketsSent { get; }
 
-    void SendFrame(EncodedFrame frame, IPEndPoint destination);
-    void SendAudio(ReadOnlySpan<byte> opusData, IPEndPoint destination);
+    /// <summary>
+    /// Sends one encoded frame to every destination. The frame is fragmented once and each fragment
+    /// goes out to all destinations, so a mesh costs upload bandwidth but never a second encode.
+    /// </summary>
+    void SendFrame(EncodedFrame frame, IReadOnlyCollection<IPEndPoint> destinations);
+
+    void SendAudio(ReadOnlySpan<byte> opusData, IReadOnlyCollection<IPEndPoint> destinations);
 }

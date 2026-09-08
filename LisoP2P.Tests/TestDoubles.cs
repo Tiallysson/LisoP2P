@@ -120,14 +120,31 @@ internal sealed class FakeMediaSender : IMediaSender
     public List<(EncodedFrame Frame, IPEndPoint Destination)> Sent { get; } = [];
     public List<(byte[] Data, IPEndPoint Destination)> AudioSent { get; } = [];
 
-    public uint FramesSent => (uint)Sent.Count;
-    public uint AudioPacketsSent => (uint)AudioSent.Count;
+    public uint FramesSent { get; private set; }
+    public uint AudioPacketsSent { get; private set; }
     public long BytesSent => Sent.Sum(entry => (long)entry.Frame.Data.Length);
 
-    public void SendFrame(EncodedFrame frame, IPEndPoint destination) => Sent.Add((frame, destination));
+    public void SendFrame(EncodedFrame frame, IReadOnlyCollection<IPEndPoint> destinations)
+    {
+        foreach (var destination in destinations)
+        {
+            Sent.Add((frame, destination));
+        }
 
-    public void SendAudio(ReadOnlySpan<byte> opusData, IPEndPoint destination) =>
-        AudioSent.Add((opusData.ToArray(), destination));
+        FramesSent++;
+    }
+
+    public void SendAudio(ReadOnlySpan<byte> opusData, IReadOnlyCollection<IPEndPoint> destinations)
+    {
+        var data = opusData.ToArray();
+
+        foreach (var destination in destinations)
+        {
+            AudioSent.Add((data, destination));
+        }
+
+        AudioPacketsSent++;
+    }
 
     public void Dispose()
     {
@@ -138,13 +155,13 @@ internal sealed class FakeMediaReceiver : IMediaReceiver
 {
     public int PendingFrames => 0;
     public int DroppedFrames { get; set; }
-    public IPAddress? ExpectedSource { get; set; }
     public int Resets { get; private set; }
     public int StartedPort { get; private set; }
+    public List<PeerId> ResetSenders { get; } = [];
 
-    public event Action<DecodableFrame>? FrameReassembled;
-    public event Action? FrameDropped;
-    public event Action<uint, byte[]>? AudioPacketReceived;
+    public event Action<PeerId, DecodableFrame>? FrameReassembled;
+    public event Action<PeerId>? FrameDropped;
+    public event Action<PeerId, uint, byte[]>? AudioPacketReceived;
 
     public Task StartAsync(int mediaPort, CancellationToken ct)
     {
@@ -154,12 +171,18 @@ internal sealed class FakeMediaReceiver : IMediaReceiver
 
     public void Reset() => Resets++;
 
-    public void Emit(DecodableFrame frame) => FrameReassembled?.Invoke(frame);
+    public void Reset(PeerId sender)
+    {
+        Resets++;
+        ResetSenders.Add(sender);
+    }
 
-    public void Drop() => FrameDropped?.Invoke();
+    public void Emit(PeerId sender, DecodableFrame frame) => FrameReassembled?.Invoke(sender, frame);
 
-    public void EmitAudio(uint sequenceNumber, byte[] opusData) =>
-        AudioPacketReceived?.Invoke(sequenceNumber, opusData);
+    public void Drop(PeerId sender) => FrameDropped?.Invoke(sender);
+
+    public void EmitAudio(PeerId sender, uint sequenceNumber, byte[] opusData) =>
+        AudioPacketReceived?.Invoke(sender, sequenceNumber, opusData);
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

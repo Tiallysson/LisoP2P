@@ -32,23 +32,39 @@ public sealed class ScreenShareSession : IScreenShareSession
     private Task? _decodeLoop;
     private Timer? _statsTimer;
     private IVideoDecoder? _decoder;
-    private IPEndPoint? _destination;
-    private PeerId? _sharingWith;
+    private List<IPEndPoint> _destinations = [];
+    private List<PeerId> _targets = [];
+    private CaptureSettings _baseSettings = new();
+    private int _monitorIndex;
+    private bool _sharing;
     private int _shareWidth;
     private int _shareHeight;
     private int _shareFps;
+    private int _shareBitrateKbps;
     private PeerId? _watchingFrom;
     private DateTimeOffset _lastKeyframeRequestAt;
     private int _decodedCount;
     private int _keyframeRequests;
     private bool _seenKeyframe;
 
-    public bool IsSharing => _sharingWith is not null;
+    public bool IsSharing => _sharing;
     public bool IsWatching => _watchingFrom is not null;
-    public PeerId? SharingWith => _sharingWith;
     public PeerId? WatchingFrom => _watchingFrom;
     public int RemoteWidth { get; private set; }
     public int RemoteHeight { get; private set; }
+    public int BitrateKbps => _shareBitrateKbps;
+    public int Fps => _shareFps;
+
+    public IReadOnlyList<PeerId> SharingWith
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return [.. _targets];
+            }
+        }
+    }
 
     public event Action<PreviewFrame>? RemoteFrameReady;
     public event Action? StateChanged;
@@ -101,19 +117,22 @@ public sealed class ScreenShareSession : IScreenShareSession
         _logger.Info($"Sessão de compartilhamento pronta: porta de mídia {_options.MediaPort}.");
     }
 
-    public async Task StartSharingAsync(PeerId target, int monitorIndex, CaptureSettings settings, CancellationToken ct)
+    public async Task StartSharingAsync(
+        IReadOnlyCollection<PeerId> targets,
+        int monitorIndex,
+        CaptureSettings settings,
+        CancellationToken ct)
     {
         if (IsSharing)
         {
             await StopSharingAsync().ConfigureAwait(false);
         }
 
-        var peer = _discovery.Peers.FirstOrDefault(p => p.Id == target)
-            ?? throw new InvalidOperationException("O peer não está mais visível na rede.");
+        var connected = targets.Where(IsConnected).ToList();
 
-        if (!_sessionManager.Sessions.TryGetValue(target, out var session) || session.State != SessionState.Connected)
+        if (connected.Count == 0)
         {
-            throw new InvalidOperationException("A sessão com o peer não está conectada.");
+            throw new InvalidOperationException("Nenhum destinatário conectado para receber a tela.");
         }
 
         var monitor = _pipeline.AvailableMonitors.FirstOrDefault(m => m.Index == monitorIndex)
@@ -124,34 +143,111 @@ public sealed class ScreenShareSession : IScreenShareSession
             monitor.Resolution.Height,
             settings.TargetHeight);
 
-        _destination = new IPEndPoint(peer.Address, ResolveMediaPort(peer));
-        _sharingWith = target;
-        _shareWidth = width;
-        _shareHeight = height;
-        _shareFps = settings.TargetFps;
+        var step = BitrateLadder.SelectFor(connected.Count);
+        var effective = settings with { TargetBitrateKbps = step.BitrateKbps, TargetFps = step.Fps };
+
+        lock (_sync)
+        {
+            _baseSettings = settings;
+            _monitorIndex = monitorIndex;
+            _targets = connected;
+            _destinations = MediaEndpoints.ResolveAll(_discovery, connected);
+            _sharing = true;
+            _shareWidth = width;
+            _shareHeight = height;
+            _shareFps = step.Fps;
+            _shareBitrateKbps = step.BitrateKbps;
+        }
 
         _pipeline.FrameReady += OnFrameReady;
 
-        await SendAsync(session, MessageType.ScreenShareStart, ScreenSharePayloadCodec.Encode(new ScreenSharePayload
-        {
-            Width = width,
-            Height = height,
-            Fps = settings.TargetFps,
-        })).ConfigureAwait(false);
+        await AnnounceStartAsync(connected).ConfigureAwait(false);
 
-        _logger.Info($"Compartilhando {width}x{height}@{settings.TargetFps} com {peer.Nickname} em {_destination}.");
-        Log?.Invoke($"Compartilhando tela com {peer.Nickname}.");
+        _logger.Info($"Compartilhando {width}x{height}@{step.Fps} a {step.BitrateKbps}kbps com {connected.Count} peer(s).");
+        Log?.Invoke($"Compartilhando tela com {connected.Count} peer(s).");
 
         try
         {
-            await _pipeline.StartAsync(monitorIndex, settings, ct).ConfigureAwait(false);
+            await _pipeline.StartAsync(monitorIndex, effective, ct).ConfigureAwait(false);
         }
         catch
         {
             _pipeline.FrameReady -= OnFrameReady;
-            _sharingWith = null;
-            _destination = null;
+
+            lock (_sync)
+            {
+                _sharing = false;
+                _targets = [];
+                _destinations = [];
+            }
+
             throw;
+        }
+
+        StateChanged?.Invoke();
+    }
+
+    public async Task UpdateTargetsAsync(IReadOnlyCollection<PeerId> targets)
+    {
+        if (!IsSharing)
+        {
+            return;
+        }
+
+        var connected = targets.Where(IsConnected).ToList();
+
+        if (connected.Count == 0)
+        {
+            await StopSharingAsync().ConfigureAwait(false);
+            return;
+        }
+
+        List<PeerId> added;
+        bool stepChanged;
+        CaptureSettings effective;
+        int monitorIndex;
+
+        var step = BitrateLadder.SelectFor(connected.Count);
+
+        lock (_sync)
+        {
+            added = [.. connected.Where(peer => !_targets.Contains(peer))];
+            stepChanged = step.BitrateKbps != _shareBitrateKbps || step.Fps != _shareFps;
+
+            _targets = connected;
+            _destinations = MediaEndpoints.ResolveAll(_discovery, connected);
+            _shareFps = step.Fps;
+            _shareBitrateKbps = step.BitrateKbps;
+
+            effective = _baseSettings with { TargetBitrateKbps = step.BitrateKbps, TargetFps = step.Fps };
+            monitorIndex = _monitorIndex;
+        }
+
+        if (stepChanged)
+        {
+            // The ladder moves fps as well as bitrate, and the encoder negotiates both at start, so
+            // restarting the pipeline is what makes the new step real. It also emits the fresh IDR
+            // every receiver needs before it can follow the change.
+            _logger.Info($"Degrau de bitrate: {connected.Count} receptor(es), {step.BitrateKbps}kbps@{step.Fps}.");
+
+            await _pipeline.StopAsync().ConfigureAwait(false);
+            await AnnounceStartAsync(connected).ConfigureAwait(false);
+
+            try
+            {
+                await _pipeline.StartAsync(monitorIndex, effective, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("Falha ao reconfigurar a captura para o novo degrau.", ex);
+                await StopSharingAsync().ConfigureAwait(false);
+                return;
+            }
+        }
+        else if (added.Count > 0)
+        {
+            await AnnounceStartAsync(added).ConfigureAwait(false);
+            _pipeline.RequestKeyframe();
         }
 
         StateChanged?.Invoke();
@@ -159,22 +255,31 @@ public sealed class ScreenShareSession : IScreenShareSession
 
     public async Task StopSharingAsync()
     {
-        var target = _sharingWith;
+        List<PeerId> targets;
 
-        if (target is null)
+        lock (_sync)
         {
-            return;
+            if (!_sharing)
+            {
+                return;
+            }
+
+            targets = _targets;
+            _sharing = false;
+            _targets = [];
+            _destinations = [];
         }
 
-        _sharingWith = null;
-        _destination = null;
         _pipeline.FrameReady -= OnFrameReady;
 
         await _pipeline.StopAsync().ConfigureAwait(false);
 
-        if (_sessionManager.Sessions.TryGetValue(target, out var session))
+        foreach (var target in targets)
         {
-            await SendAsync(session, MessageType.ScreenShareStop, []).ConfigureAwait(false);
+            if (_sessionManager.Sessions.TryGetValue(target, out var session))
+            {
+                await SendAsync(session, MessageType.ScreenShareStop, []).ConfigureAwait(false);
+            }
         }
 
         _logger.Info("Compartilhamento encerrado.");
@@ -182,16 +287,53 @@ public sealed class ScreenShareSession : IScreenShareSession
         StateChanged?.Invoke();
     }
 
-    private int ResolveMediaPort(DiscoveredPeer peer) =>
-        peer.MediaPort is > 0 and <= 65535 ? peer.MediaPort : NetworkOptions.DefaultMediaPort;
+    private bool IsConnected(PeerId peer) =>
+        _sessionManager.Sessions.TryGetValue(peer, out var session) && session.State == SessionState.Connected;
+
+    private async Task AnnounceStartAsync(IReadOnlyCollection<PeerId> targets)
+    {
+        int width, height, fps;
+
+        lock (_sync)
+        {
+            width = _shareWidth;
+            height = _shareHeight;
+            fps = _shareFps;
+        }
+
+        if (width <= 0 || height <= 0 || fps <= 0)
+        {
+            return;
+        }
+
+        var payload = ScreenSharePayloadCodec.Encode(new ScreenSharePayload
+        {
+            Width = width,
+            Height = height,
+            Fps = fps,
+        });
+
+        foreach (var target in targets)
+        {
+            if (_sessionManager.Sessions.TryGetValue(target, out var session))
+            {
+                await SendAsync(session, MessageType.ScreenShareStart, payload).ConfigureAwait(false);
+            }
+        }
+    }
 
     private void OnFrameReady(EncodedFrame frame)
     {
-        var destination = _destination;
+        List<IPEndPoint> destinations;
 
-        if (destination is not null)
+        lock (_sync)
         {
-            _sender.SendFrame(frame, destination);
+            destinations = _destinations;
+        }
+
+        if (destinations.Count > 0)
+        {
+            _sender.SendFrame(frame, destinations);
         }
     }
 
@@ -204,7 +346,14 @@ public sealed class ScreenShareSession : IScreenShareSession
 
         session.MessageReceived += envelope => OnMessageReceived(session, envelope);
 
-        if (_sharingWith == session.RemoteId)
+        bool isTarget;
+
+        lock (_sync)
+        {
+            isTarget = _sharing && _targets.Contains(session.RemoteId);
+        }
+
+        if (isTarget)
         {
             _ = ResendShareStartAsync(session);
         }
@@ -216,20 +365,9 @@ public sealed class ScreenShareSession : IScreenShareSession
     /// </summary>
     private async Task ResendShareStartAsync(IPeerSession session)
     {
-        if (_shareWidth <= 0 || _shareHeight <= 0 || _shareFps <= 0)
-        {
-            return;
-        }
-
         try
         {
-            await SendAsync(session, MessageType.ScreenShareStart, ScreenSharePayloadCodec.Encode(new ScreenSharePayload
-            {
-                Width = _shareWidth,
-                Height = _shareHeight,
-                Fps = _shareFps,
-            })).ConfigureAwait(false);
-
+            await AnnounceStartAsync([session.RemoteId]).ConfigureAwait(false);
             _pipeline.RequestKeyframe();
         }
         catch (Exception ex)
@@ -242,9 +380,18 @@ public sealed class ScreenShareSession : IScreenShareSession
     {
         _observed.TryRemove(id.Value, out _);
 
-        if (_sharingWith == id)
+        bool wasTarget;
+        List<PeerId> remaining;
+
+        lock (_sync)
         {
-            _ = StopSharingAsync();
+            wasTarget = _sharing && _targets.Contains(id);
+            remaining = [.. _targets.Where(peer => peer != id)];
+        }
+
+        if (wasTarget)
+        {
+            _ = UpdateTargetsAsync(remaining);
         }
 
         if (_watchingFrom == id)
@@ -268,7 +415,14 @@ public sealed class ScreenShareSession : IScreenShareSession
 
                 break;
             case MessageType.KeyframeRequest:
-                if (_sharingWith == session.RemoteId)
+                bool isTarget;
+
+                lock (_sync)
+                {
+                    isTarget = _sharing && _targets.Contains(session.RemoteId);
+                }
+
+                if (isTarget)
                 {
                     _pipeline.RequestKeyframe();
                 }
@@ -284,10 +438,15 @@ public sealed class ScreenShareSession : IScreenShareSession
             return;
         }
 
-        var peer = _discovery.Peers.FirstOrDefault(p => p.Id == session.RemoteId);
-
         lock (_sync)
         {
+            // Only one member shares at a time in this phase, so a second sender is ignored instead
+            // of opening a decoder per sender.
+            if (_watchingFrom is not null && _watchingFrom != session.RemoteId)
+            {
+                return;
+            }
+
             _decoder?.Dispose();
             _decoder = null;
 
@@ -306,9 +465,9 @@ public sealed class ScreenShareSession : IScreenShareSession
             RemoteHeight = payload.Height;
             _watchingFrom = session.RemoteId;
             _seenKeyframe = false;
-            _receiver.ExpectedSource = peer?.Address;
-            _receiver.Reset();
         }
+
+        _receiver.Reset(session.RemoteId);
 
         _logger.Info($"Recebendo tela de {session.RemoteNickname}: {payload.Width}x{payload.Height}@{payload.Fps}.");
         Log?.Invoke($"Recebendo a tela de {session.RemoteNickname}.");
@@ -319,23 +478,29 @@ public sealed class ScreenShareSession : IScreenShareSession
 
     private void StopWatching()
     {
+        PeerId? source;
+
         lock (_sync)
         {
+            source = _watchingFrom;
             _decoder?.Dispose();
             _decoder = null;
             _watchingFrom = null;
             _seenKeyframe = false;
-            _receiver.ExpectedSource = null;
         }
 
-        _receiver.Reset();
+        if (source is not null)
+        {
+            _receiver.Reset(source);
+        }
+
         _logger.Info("Exibição de tela remota encerrada.");
         StateChanged?.Invoke();
     }
 
-    private void OnFrameReassembled(DecodableFrame frame)
+    private void OnFrameReassembled(PeerId sender, DecodableFrame frame)
     {
-        if (_watchingFrom is null)
+        if (_watchingFrom != sender)
         {
             return;
         }
@@ -343,7 +508,13 @@ public sealed class ScreenShareSession : IScreenShareSession
         _decodeQueue.Writer.TryWrite(frame);
     }
 
-    private void OnFrameDropped() => RequestKeyframe();
+    private void OnFrameDropped(PeerId sender)
+    {
+        if (_watchingFrom == sender)
+        {
+            RequestKeyframe();
+        }
+    }
 
     /// <summary>
     /// Keyframe recovery goes over the TCP session because it has to arrive; it is debounced so a
@@ -469,12 +640,24 @@ public sealed class ScreenShareSession : IScreenShareSession
         var decoded = Interlocked.Exchange(ref _decodedCount, 0);
         var name = _decoder?.Name ?? "-";
 
+        int bitrate, fps, receivers;
+
+        lock (_sync)
+        {
+            bitrate = _shareBitrateKbps;
+            fps = _shareFps;
+            receivers = _targets.Count;
+        }
+
         StatsUpdated.Invoke(new ScreenShareStats(
             decoded,
             _receiver.DroppedFrames,
             _receiver.PendingFrames,
             Volatile.Read(ref _keyframeRequests),
-            name));
+            name,
+            bitrate,
+            fps,
+            receivers));
     }
 
     public async ValueTask DisposeAsync()

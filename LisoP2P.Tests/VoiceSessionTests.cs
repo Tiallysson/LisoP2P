@@ -158,7 +158,7 @@ public class VoiceSessionTests
 
         var session = harness.OpenSession();
 
-        await harness.Voice.StartVoiceAsync(RemoteId, new AudioSettings(), CancellationToken.None);
+        await harness.Voice.StartVoiceAsync([RemoteId], new AudioSettings(), CancellationToken.None);
 
         var start = Assert.Single(session.Sent, envelope => envelope.Type == MessageType.VoiceStart);
         Assert.True(VoicePayloadCodec.TryDecode(start.Payload, out var payload));
@@ -178,7 +178,7 @@ public class VoiceSessionTests
         await harness.Voice.StartAsync(CancellationToken.None);
         harness.OpenSession(mediaPort: 47999);
 
-        await harness.Voice.StartVoiceAsync(RemoteId, new AudioSettings(), CancellationToken.None);
+        await harness.Voice.StartVoiceAsync([RemoteId], new AudioSettings(), CancellationToken.None);
 
         harness.Voice.SetTransmitting(true);
         Assert.True(harness.Capture.IsRunning);
@@ -197,7 +197,7 @@ public class VoiceSessionTests
         await harness.Voice.StartAsync(CancellationToken.None);
         harness.OpenSession();
 
-        await harness.Voice.StartVoiceAsync(RemoteId, new AudioSettings(), CancellationToken.None);
+        await harness.Voice.StartVoiceAsync([RemoteId], new AudioSettings(), CancellationToken.None);
 
         harness.Voice.SetTransmitting(true);
         harness.Capture.Emit(new float[960]);
@@ -249,9 +249,9 @@ public class VoiceSessionTests
 
         Assert.Null(harness.Playback.Source!());
 
-        harness.Receiver.EmitAudio(1, [11]);
-        harness.Receiver.EmitAudio(2, [12]);
-        harness.Receiver.EmitAudio(3, [13]);
+        harness.Receiver.EmitAudio(RemoteId, 1, [11]);
+        harness.Receiver.EmitAudio(RemoteId, 2, [12]);
+        harness.Receiver.EmitAudio(RemoteId, 3, [13]);
 
         Assert.Equal([11f], harness.Playback.Source!());
         Assert.Equal([12f], harness.Playback.Source!());
@@ -281,7 +281,7 @@ public class VoiceSessionTests
 
         var session = harness.OpenSession();
 
-        await harness.Voice.StartVoiceAsync(RemoteId, new AudioSettings(), CancellationToken.None);
+        await harness.Voice.StartVoiceAsync([RemoteId], new AudioSettings(), CancellationToken.None);
         harness.Voice.SetTransmitting(true);
         await harness.Voice.StopVoiceAsync();
 
@@ -301,7 +301,7 @@ public class VoiceSessionTests
 
         var session = harness.OpenSession();
 
-        await harness.Voice.StartVoiceAsync(RemoteId, new AudioSettings(), CancellationToken.None);
+        await harness.Voice.StartVoiceAsync([RemoteId], new AudioSettings(), CancellationToken.None);
         session.Receive(MessageType.VoiceStart, VoiceStart());
 
         harness.Sessions.Close(RemoteId);
@@ -317,7 +317,7 @@ public class VoiceSessionTests
         await harness.Voice.StartAsync(CancellationToken.None);
         harness.OpenSession();
 
-        await harness.Voice.StartVoiceAsync(RemoteId, new AudioSettings(), CancellationToken.None);
+        await harness.Voice.StartVoiceAsync([RemoteId], new AudioSettings(), CancellationToken.None);
         harness.Voice.SetTransmitting(true);
 
         harness.Capture.Fail(new InvalidOperationException("device gone"));

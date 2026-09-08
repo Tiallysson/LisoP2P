@@ -1,4 +1,4 @@
-using System.Net;
+using LisoP2P.Core;
 using LisoP2P.Media;
 
 namespace LisoP2P.Net;
@@ -7,12 +7,13 @@ public interface IMediaReceiver : IAsyncDisposable
 {
     int PendingFrames { get; }
     int DroppedFrames { get; }
-    IPAddress? ExpectedSource { get; set; }
 
-    event Action<DecodableFrame>? FrameReassembled;
-    event Action? FrameDropped;
-    event Action<uint, byte[]>? AudioPacketReceived;
+    event Action<PeerId, DecodableFrame>? FrameReassembled;
+    event Action<PeerId>? FrameDropped;
+    event Action<PeerId, uint, byte[]>? AudioPacketReceived;
 
     Task StartAsync(int mediaPort, CancellationToken ct);
+
     void Reset();
+    void Reset(PeerId sender);
 }
