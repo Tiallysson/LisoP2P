@@ -90,10 +90,17 @@ public class PeerIdentityTests : IDisposable
         Assert.Equal(PeerId.PublicKeySize, store.Id.PublicKeyBytes.Length);
         Assert.Equal(PeerFingerprint.For(store.Id), store.Fingerprint);
 
-        var raw = File.ReadAllText(Path.Combine(_directory, "identity.json"));
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(_directory, "identity.json")));
+        var root = document.RootElement;
+        var storedKey = Convert.FromBase64String(root.GetProperty("PrivateKey").GetString()!);
 
-        Assert.Contains("\"PrivateKey\"", raw);
-        Assert.DoesNotContain(Convert.ToBase64String(store.Id.PublicKeyBytes) + "\",\"PrivateKey", raw);
+        Assert.Equal(OperatingSystem.IsWindows() ? "dpapi" : "none", root.GetProperty("Protection").GetString());
+
+        if (OperatingSystem.IsWindows())
+        {
+            // A DPAPI blob carries its own header, so it is never the bare 32-byte seed.
+            Assert.True(storedKey.Length > 32);
+        }
     }
 
     [Fact]

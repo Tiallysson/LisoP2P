@@ -1,29 +1,16 @@
-using System.Globalization;
-using System.Text;
+using LisoP2P.Core.Diagnostics;
 
 namespace LisoP2P.Media;
 
-public sealed class FileMediaLogger : IMediaLogger
+/// <summary>
+/// media.log, kept apart from app.log: an encoder problem is read by looking at capture start,
+/// adapters and MFT enumeration in one continuous file, not interleaved with session errors.
+/// </summary>
+public sealed class FileMediaLogger(string path) : IMediaLogger
 {
-    private const long MaxFileBytes = 5 * 1024 * 1024;
+    private readonly FileAppLogger _log = new(path);
 
-    private readonly object _sync = new();
-    private readonly string _path;
-
-    public string? FilePath => _path;
-
-    public FileMediaLogger(string path)
-    {
-        _path = path;
-
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        RollIfTooLarge();
-    }
+    public string? FilePath => _log.FilePath;
 
     public static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -31,66 +18,7 @@ public sealed class FileMediaLogger : IMediaLogger
         "logs",
         "media.log");
 
-    public void Info(string message)
-    {
-        Write("INFO ", message, null);
-    }
+    public void Info(string message) => _log.Info(message);
 
-    public void Error(string message, Exception? error = null)
-    {
-        Write("ERRO ", message, error);
-    }
-
-    private void Write(string level, string message, Exception? error)
-    {
-        var builder = new StringBuilder();
-        builder.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture));
-        builder.Append(' ');
-        builder.Append(level);
-        builder.Append(message);
-
-        if (error is not null)
-        {
-            builder.AppendLine();
-            builder.Append(error);
-        }
-
-        var line = builder.ToString();
-
-        lock (_sync)
-        {
-            try
-            {
-                File.AppendAllText(_path, line + Environment.NewLine, Encoding.UTF8);
-            }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
-        }
-    }
-
-    private void RollIfTooLarge()
-    {
-        try
-        {
-            var info = new FileInfo(_path);
-            if (!info.Exists || info.Length < MaxFileBytes)
-            {
-                return;
-            }
-
-            var previous = _path + ".1";
-            File.Delete(previous);
-            File.Move(_path, previous);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
+    public void Error(string message, Exception? error = null) => _log.Error(message, error);
 }
