@@ -4,16 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-**Fase 5** (of 6 planned phases) is implemented: fase 0 (scaffold, peer identity, wire protocol,
+**All six phases are implemented**: fase 0 (scaffold, peer identity, wire protocol,
 UDP broadcast discovery, manual-connect fallback), fase 1 (TCP session with handshake/keepalive/
 reconnect, 1:1 chat with SQLite history), fase 2 (DXGI screen capture, H.264 encode, capture
 test window), fase 3 (fragmented UDP media transport, H.264 decode, 1:1 screen sharing wired
 into the conversation window), fase 4 (WASAPI capture, Opus, jitter buffer, push-to-talk
-voice on the same media socket) and fase 5 (mesh room: gossiped membership, room chat, screen
-share and voice fanned out to every member, per-peer jitter buffers with mixing, bitrate ladder).
+voice on the same media socket), fase 5 (mesh room: gossiped membership, room chat, screen
+share and voice fanned out to every member, per-peer jitter buffers with mixing, bitrate ladder)
+and fase 6 (Ed25519 identity with a visible fingerprint, persisted settings screen, error
+presentation, single-file publish).
 
 `LisoP2P.App/Docs/fase0-prompt.md` is the original Portuguese specification for the first phase
-(`fase1-prompt.md` through `fase5-prompt.md` cover the later ones). It
+(`fase1-prompt.md` through `fase6-prompt.md` cover the later ones). It
 names project prefixes as `P2PChat.*` and targets `net8.0` — this repo instead kept the
 `LisoP2P.*` prefix and targets `net10.0`/`net10.0-windows` (explicit choices made when starting
 implementation, since the scaffold already used net10.0). Everything else in the spec was
@@ -24,21 +26,26 @@ followed as written; read it before touching Core/Net if you need the full behav
 Six projects, referenced as `Media → Core`, `Net → Core, Media`, `Storage → Core`,
 `App → Core, Net, Media, Storage`, `Tests → Core, Net, Media, Storage`:
 
-- **`LisoP2P.Core`** (classlib, `net10.0`, no `-windows`) — `PeerId`, `IIdentityStore` /
-  `FileIdentityStore`, `DiscoveredPeer`, and the `Protocol/` namespace: `Envelope`, `MessageType`,
+- **`LisoP2P.Core`** (classlib, `net10.0`, no `-windows`) — `PeerId` (an Ed25519 public key),
+  `PeerIdentity`, `PeerFingerprint`, `IIdentityStore` / `FileIdentityStore`, `AudioCaptureMode`,
+  `DiscoveredPeer`, the `Settings/` namespace (`AppSettings` / `AppSettingsCodec`,
+  `IAppSettingsStore` / `FileAppSettingsStore`, `NetworkPorts`, `PortResolver`, `AppPaths`),
+  the `Diagnostics/` namespace (`IAppLogger` / `FileAppLogger`), and the `Protocol/` namespace: `Envelope`, `MessageType`,
   `AnnouncePayload`, and their MessagePack codecs (`ProtocolCodec`, `AnnouncePayloadCodec`),
-  plus the media wire format: `MediaPacketHeader` / `MediaPacketCodec` (fixed 29-byte binary
+  plus the media wire format: `MediaPacketHeader` / `MediaPacketCodec` (fixed 45-byte binary
   header carrying an explicit `SenderId`, no MessagePack), `ScreenSharePayload` /
   `ScreenSharePayloadCodec`, `VoicePayload` / `VoicePayloadCodec`, plus the room protocol:
   `RoomId`, `RoomMemberListPayload` / `RoomMemberInfo` / `RoomMemberListPayloadCodec` and
-  `RoomSpeakingPayload` / `RoomSpeakingPayloadCodec`.
+  `RoomSpeakingPayload` / `RoomSpeakingPayloadCodec`. Depends on `MessagePack`,
+  `BouncyCastle.Cryptography` (Ed25519) and `System.Security.Cryptography.ProtectedData` (DPAPI).
 - **`LisoP2P.Net`** — `NetworkOptions`, `IDiscoveryService` / `DiscoveryService` (UDP broadcast
   discovery), `BroadcastAddressCalculator`, `ManualPeerConnector` (unicast fallback),
   `PeerSession` / `SessionManager`, and the media path: `IMediaSender` / `UdpMediaSender`,
   `IMediaReceiver` / `UdpMediaReceiver`, `FrameReassembler`, `IJitterBuffer` / `JitterBuffer`,
   `IScreenShareSession` / `ScreenShareSession`, `IVoiceSession` / `VoiceSession`, and the room
   layer: `RoomMember`, `IRoomService` / `RoomService` (gossip + speaking), `IRoomChatRouter` /
-  `RoomChatRouter`, `IAudioMixer` / `AudioMixer`, `BitrateLadder`, `MediaEndpoints`.
+  `RoomChatRouter`, `IAudioMixer` / `AudioMixer`, `BitrateLadder`, `MediaEndpoints`, plus
+  `PortProbe` (bind-and-release check used by the settings screen and by startup).
 - **`LisoP2P.Media`** — `IScreenCapture` / `DxgiScreenCapture` (Desktop Duplication),
   `TextureConverter` (BGRA→NV12, downscale to the target resolution and preview scaling on the
   D3D11 VideoProcessor), `IVideoEncoder` / `MediaFoundationH264Encoder` / `VideoEncoderFactory`
@@ -55,21 +62,39 @@ Six projects, referenced as `Media → Core`, `Net → Core, Media`, `Storage �
 - **`LisoP2P.App`** (wpf, `net10.0-windows`) — WPF/MVVM UI (`CommunityToolkit.Mvvm`), composed via
   `Microsoft.Extensions.DependencyInjection` in `App.xaml.cs` (no separate DI framework). The room
   screen is `RoomWindow` / `RoomViewModel`; the 1:1 conversation stays in `MainWindow` /
-  `ChatViewModel`.
+  `ChatViewModel`. Fase 6 added `Services/` (`IAppShell`, `AppHost`, `IErrorPresenter` /
+  `NotificationCenter`, `AppNotification`), `SettingsWindow` / `SettingsViewModel`,
+  `WelcomeWindow` / `WelcomeViewModel` and `StartupErrorWindow`.
 - **`LisoP2P.Tests`** (xunit) — codec round-trip/malformed-input coverage, identity persistence,
   broadcast address calculation, fragment reassembly, screen-share orchestration, a real
   encode/decode round trip through Media Foundation, and the fase 5 logic: member gossip
   convergence, speaking timeout against an injected clock, bitrate ladder, audio mixing, room chat
-  routing and per-`SenderId` media demultiplexing.
+  routing and per-`SenderId` media demultiplexing, plus the fase 6 logic: `PeerId` equality and
+  hash code, fingerprint formatting, identity persistence and legacy migration, `AppSettings`
+  round-trip and normalization, and the flag > file > default port precedence.
 
 **Hard constraint:** Core, Net, and Media target plain `net10.0` (no `-windows`) and must never
 reference `System.Windows`. Anything UI-facing needed from Net is exposed via an event/callback,
 never a direct dependency.
 
 Design points worth knowing before touching this code:
-- `PeerId` is a random `Guid`, persisted via `FileIdentityStore` under
-  `%APPDATA%/LisoP2P/identity.json` by default. It is never derived from IP, since IP changes
-  when Radmin VPN is involved but identity must not.
+- `PeerId` **is** the peer's 32-byte Ed25519 public key, persisted via `FileIdentityStore` under
+  `%APPDATA%/LisoP2P/identity.json`. It is never derived from IP, since IP changes when Radmin VPN
+  is involved but identity must not. Carrying the whole key rather than a hash of it is what lets
+  any peer compute the fingerprint of anyone it hears about without a second round trip.
+- `PeerId` overrides `Equals`/`GetHashCode` **by hand**. A positional record over a `byte[]`
+  compares by reference, and `PeerId` has been a dictionary key in every layer since fase 1 — that
+  would have broken lookups silently, not loudly. The constructor also copies the array so a buffer
+  decoded off the wire can never mutate an id already in use as a key.
+- The private key is generated locally and stored DPAPI-protected (`CurrentUser`); it never leaves
+  `FileIdentityStore`. Nothing signs anything yet — the pair exists so the id is derived and
+  verifiable, and fase 6 explicitly leaves per-message signatures to a future phase.
+- `PeerFingerprint` is SHA-256 of the public key in 16 groups of 4 hex characters. It is shown in
+  Configurações → Identidade and once per peer as a non-blocking toast when a session opens.
+  Nothing is gated on it: this is verification by transparency, not an approval flow.
+- A pre-fase-6 `identity.json` (Guid + nickname) cannot be converted, so it is replaced on the next
+  boot. The nickname survives (it was never the identity), the id does not, and
+  `FileIdentityStore.MigratedFromLegacyIdentity` is what the UI uses to say so once.
 - The nickname is user-editable (`IIdentityStore.SetNickname`, "Seu nome" in the main window) and
   lives in the same `identity.json`, but it is **display only**: `PeerId` never changes with it,
   and discovery, sessions and chat history keep keying off the id. `FileIdentityStore` writes via
@@ -80,11 +105,13 @@ Design points worth knowing before touching this code:
 - Every nickname coming off the wire goes through `NicknameRules.Sanitize` (24 chars, no control
   chars, no zero-width/BOM, whitespace collapsed) with `NicknameRules.FallbackFor(id)` when it
   sanitizes to empty — announces and Hello payloads are arbitrary bytes from an open socket.
-- `App.xaml.cs` nests the identity directory under the session port when it differs from
-  `NetworkOptions.DefaultSessionPort` (`GetIdentityDirectory`). Without this, two same-machine
-  dev instances (differentiated only by `--session-port`) would load the same identity file, get
-  an identical `PeerId`, and `DiscoveryService` would filter each other out as self — this was a
-  real bug caught by manually running two instances side by side.
+- `AppPaths.ResolveDataDirectory` nests the data directory under the session port. Without this,
+  two same-machine dev instances (differentiated only by `--session-port`) would load the same
+  identity file, get an identical `PeerId`, and `DiscoveryService` would filter each other out as
+  self — this was a real bug caught by manually running two instances side by side. It keys off the
+  **flag**, never off the effective port: since fase 6 the port can also come from `settings.json`,
+  and following the effective port would move `identity.json` and silently hand the user a new
+  identity when they changed a port in the settings screen.
 - `ProtocolCodec.TryDecode` / `AnnouncePayloadCodec.TryDecode` must never throw — they return
   `false` on malformed/unknown input, since the socket accepts arbitrary bytes from the open
   network.
@@ -100,10 +127,11 @@ Design points worth knowing before touching this code:
   `MainViewModel` marshals `IDiscoveryService` events to the UI thread via
   `Application.Current.Dispatcher.Invoke` — the events do not arrive on the UI thread on their
   own.
-- `--discovery-port` / `--session-port` / `--media-port` CLI args override `NetworkOptions`
-  (defaults 47100 UDP / 47101 TCP / 47102 UDP) — required for running two local instances side
-  by side. When `--session-port` is non-default and `--media-port` is absent, the media port is
-  `session-port + 1`, so the second instance does not fight the first for the UDP socket.
+- `PortResolver` resolves ports as **command line > `settings.json` > compiled default** (47100
+  UDP / 47101 TCP / 47102 UDP). The order is not a preference: the fase 0/1 acceptance test tells
+  two same-machine instances apart by `--session-port` alone, so a settings file must never be able
+  to override it. The `session-port + 1` media-port derivation applies **only** to the command
+  line — a session port that came from the file keeps the media port that came from the file.
 - Video never travels over the TCP session: TCP retransmits and head-of-line blocks, and a frame
   three frames late is useless live. Only control does (`ScreenShareStart` 40, `ScreenShareStop`
   41, `KeyframeRequest` 42 — the keyframe request goes over TCP precisely because it must
@@ -206,8 +234,9 @@ Design points worth knowing before touching this code:
   a speaker that has not renewed in 3 s (`RoomService.SpeakingTimeout`), so an app that dies with
   the key held does not leave the indicator stuck on. `RoomService.Tick()` does both the expiry and
   the renewal; its clock is injected so the timeout is testable without `Task.Delay`.
-- `MediaPacketCodec` is at **version 2**: the header grew from 13 to 29 bytes to carry an explicit
-  16-byte `SenderId`. In a mesh the receive socket takes datagrams from several senders at once, so
+- `MediaPacketCodec` is at **version 3**: the header grew from 13 to 29 bytes in fase 5 to carry an
+  explicit `SenderId`, and to 45 bytes in fase 6 when that field became the 32-byte public key.
+  In a mesh the receive socket takes datagrams from several senders at once, so
   the sender can no longer be "the only peer on the other end", and inferring it from the source
   endpoint breaks when NAT or Radmin remaps the port. `UdpMediaReceiver` keeps one `FrameReassembler`
   **per sender** (capped at 8, since the socket accepts bytes from anyone) and drops its own packets.
@@ -243,6 +272,33 @@ Design points worth knowing before touching this code:
   old 1:1 history; `GetHistoryAsync` and `GetUndeliveredAsync` filter on `room_id IS NULL` so room
   chat never leaks into a 1:1 window. For a room row, `StoredMessage.PeerId` is the **sender** (not
   the other party) so a bubble can show who wrote it.
+- Fase 6 wire bumps: `Envelope.SenderId` went `Guid` → `byte[32]` (`ProtocolCodec.CurrentVersion`
+  1 → 2, and `TryDecode` now rejects a sender that is not a valid key and normalizes a nil
+  payload); `MediaPacketCodec` went 29 → 45 bytes and version 2 → 3; `RoomMemberInfo.PeerId` is a
+  `byte[]` with malformed ids dropped on decode; SQLite stores the id as hex, and a pre-fase-6 row
+  decodes to the all-zero id so old history stays readable instead of throwing.
+- `AppHost` splits the composition root in two. Everything bound to a port — discovery, sessions,
+  media sockets, screen share, voice, room, `MainViewModel` — is torn down and rebuilt when the
+  user applies a new port; identity, settings, chat history, the capture pipeline and the
+  notification banner live in the root provider and survive. `IAppShell` is the narrow surface the
+  windows use, and `MainWindow` rebinds on `Rebuilt`. This is what makes "change the session port
+  and apply" work without restarting the process.
+- `AppSettings` is applied **only on Salvar**, never field by field: a half-typed port would
+  rebuild the network stack on every keystroke. Audio devices are the deliberate exception and go
+  straight to `IVoiceSession.UpdateDevices`, because switching output mid-call is an acceptance
+  item. A malformed value in `settings.json` means "use the default" (`AppSettings.Normalized`),
+  never "refuse to start" — the file is hand-editable.
+- `IErrorPresenter` has exactly one rule: a network error is never a modal that blocks the UI
+  thread. `ShowTransient` for what resolves itself, `ShowPersistent` (keyed, so a repeated report
+  replaces rather than stacks) for what needs the user. Everything logged to `app.log` on the way
+  through. `PortProbe` is a snapshot, not a reservation — the startup path still has to survive
+  losing the race between the check and the real bind.
+- Publish is single-file, self-contained, **untrimmed on purpose**: WPF does not support trimming,
+  and Vortice/NAudio/Concentus reach for types through interop and reflection, so a trimmed build
+  breaks at runtime on exactly the clean machine that has no SDK to debug it with. The publish
+  properties live in `Properties/PublishProfiles/win-x64.pubxml` so `dotnet build` / `dotnet run`
+  stay RID-agnostic; `Directory.Build.props` embeds Release symbols so the output really is one
+  file.
 - `RoomMemberListPayloadCodec.TryDecode` normalizes as it decodes: nicknames sanitized, empty and
   duplicate ids dropped, oversized lists rejected. MessagePack maps a bare nil onto a **null payload
   and null reference properties**, so the null guards there are load-bearing — a fuzz test caught a
@@ -254,6 +310,7 @@ Design points worth knowing before touching this code:
 dotnet build
 dotnet test
 dotnet run --project LisoP2P.App -- --discovery-port 47100 --session-port 47101
+dotnet publish LisoP2P.App -c Release -p:PublishProfile=win-x64
 ```
 
 Manual acceptance test (see README.md): run two instances with distinct `--session-port` values
@@ -265,6 +322,17 @@ after 5 s of network loss, joining an ongoing share, 10 minutes with stable memo
 under 300 ms, voice plus screen without either degrading, recovery after a 2-3 s network cut,
 device switch mid-call) need two machines on LAN and on Radmin VPN, and have **not** been run
 yet — only a two-instance startup smoke check.
+
+The fase 6 acceptance list is partly verified. Confirmed by running the app here: the published
+single-file exe starts and creates `%APPDATA%/LisoP2P/<port>/` with `identity.json`,
+`settings.json` and `app.log` on a first boot; the welcome screen leads into a working network; the
+settings window opens and all five tabs render; a second instance on the same `--session-port`
+shows the port-conflict screen instead of crashing and logs a readable line. **Not** yet run: the
+clean-machine test (a Windows box with no .NET SDK or runtime, where the native interop of Vortice,
+NAudio and Concentus actually proves itself), applying a port change and confirming a new
+connection uses the new port, switching the audio output mid-call, comparing fingerprints across
+two instances, and pulling the network during a screen share to see the overlay. The README carries
+this as a checklist.
 
 The fase 5 acceptance list needs **three** instances (A, B, C) on LAN and on Radmin VPN: members
 converge within 5 s, chat shows the right sender, A shares and both B and C receive at the 3-member

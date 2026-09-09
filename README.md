@@ -3,18 +3,27 @@
 App de comunicação P2P para Windows, estilo Discord, que conecta máquinas
 diretamente pela LAN (real ou virtual via Radmin VPN), sem servidor central.
 
-Este repositório está na **fase 5 de 6**: solution, protocolo de mensagens,
+O cronograma de **6 fases está completo**: solution, protocolo de mensagens,
 descoberta de peers na rede, sessão TCP 1:1, chat de texto com histórico local,
 captura de tela com encode H.264, transmissão de tela, voz (microfone e/ou som
-do sistema, Opus, push-to-talk) e **sala em mesh** — várias sessões simultâneas
-com chat, tela e voz para todos os membros. Veja `fase0-prompt.md` a
-`fase5-prompt.md` em `LisoP2P.App/Docs/` para as especificações completas de
-cada fase.
+do sistema, Opus, push-to-talk), **sala em mesh** — várias sessões simultâneas
+com chat, tela e voz para todos os membros — e o acabamento da fase 6: tela de
+configurações persistida, identidade por par de chaves Ed25519 com fingerprint
+visível, erros que viram estado na tela em vez de exceção crua, e um executável
+único que roda sem .NET instalado. Veja `fase0-prompt.md` a `fase6-prompt.md` em
+`LisoP2P.App/Docs/` para as especificações completas de cada fase.
+
+> **Atualizando de uma versão anterior?** A fase 6 troca o `PeerId` aleatório por
+> uma chave pública. Sua identidade antiga não pode ser convertida e é
+> substituída na primeira execução — veja
+> [Identidade e fingerprint](#identidade-e-fingerprint-fase-6).
 
 ## Estrutura
 
-- `LisoP2P.Core` — identidade de peer, protocolo de mensagens (MessagePack),
-  framing de tamanho-prefixado para o transporte TCP.
+- `LisoP2P.Core` — identidade de peer (par de chaves Ed25519, fingerprint),
+  protocolo de mensagens (MessagePack), framing de tamanho-prefixado para o
+  transporte TCP, as configurações persistidas (`AppSettings`, `PortResolver`,
+  `AppPaths`) e o log em arquivo (`FileAppLogger`).
 - `LisoP2P.Net` — descoberta de peers via broadcast UDP, conector manual,
   sessão TCP 1:1 (`PeerSession`/`SessionManager`) com handshake, keepalive e
   reconexão automática, transporte de mídia por UDP (`UdpMediaSender`,
@@ -32,7 +41,9 @@ cada fase.
   o áudio: captura WASAPI (`WasapiAudioCapture`), playback (`WasapiAudioPlayback`),
   codec Opus (`OpusAudioEncoder`/`OpusAudioDecoder`) e normalização de amostras
   (`AudioResampler`, `AudioFrameAccumulator`).
-- `LisoP2P.App` — interface WPF (MVVM).
+- `LisoP2P.App` — interface WPF (MVVM), a tela de configurações, a tela de
+  boas-vindas, o banner de erros (`IErrorPresenter`) e o `AppHost`, que separa o
+  que depende de porta do que sobrevive a uma troca de porta.
 - `LisoP2P.Tests` — testes de unidade (xUnit).
 
 ## Nome de usuário
@@ -41,10 +52,10 @@ O campo **Seu nome**, no topo da coluna da esquerda, define o nome que os
 outros peers veem. Enter ou o botão "Salvar" grava o novo nome em
 `identity.json`, junto do `PeerId`.
 
-O `PeerId` **não muda** com o rename: é o mesmo `Guid` aleatório de sempre, e
-continua sendo a única chave de identidade usada por descoberta, sessões e
-histórico de chat. Trocar o nome não reabre sessão, não duplica peer na lista
-e não afeta as conversas salvas.
+O `PeerId` **não muda** com o rename: é a chave pública Ed25519 gerada na
+primeira execução, e continua sendo a única chave de identidade usada por
+descoberta, sessões e histórico de chat. Trocar o nome não reabre sessão, não
+duplica peer na lista e não afeta as conversas salvas.
 
 A troca chega aos outros peers por dois caminhos, ambos imediatos:
 
@@ -221,21 +232,19 @@ Desvios em relação à `fase2-prompt.md`:
   direto ao MFT via `MFCreateDXGISurfaceBuffer` — é otimização de fase
   posterior.
 
-### Requisitos e limitações
+### Requisitos
 
-- GPU com suporte a Direct3D 11 e driver funcional; sem isso a janela de teste
-  mostra o motivo da falha em vez de quebrar o app.
-- Conteúdo protegido por DRM (players com proteção de conteúdo) aparece
-  **preto** na captura. É comportamento da própria Desktop Duplication API,
-  não um bug do app, e não há como contornar.
-- A captura é de um monitor inteiro. Janela específica e múltiplos monitores
-  simultâneos não fazem parte desta fase.
+GPU com suporte a Direct3D 11 e driver funcional; sem isso a janela de teste
+mostra o motivo da falha em vez de quebrar o app.
+
+Veja [Limitações conhecidas](#limitações-conhecidas), onde as restrições de todas
+as fases estão reunidas.
 
 ## Transmissão de tela (fase 3)
 
 Com a conversa conectada, o botão **Compartilhar tela** no cabeçalho começa a
-transmitir para aquele peer; se a máquina tiver mais de um monitor, o seletor
-ao lado escolhe qual. Do outro lado a área de vídeo aparece sozinha acima das
+transmitir para aquele peer, usando o monitor, a resolução e o fps escolhidos em
+Configurações → Vídeo. Do outro lado a área de vídeo aparece sozinha acima das
 mensagens assim que o primeiro keyframe chega, e some quando a transmissão
 para (ou quando a sessão TCP cai). A caixa **Debug** liga o contador de fps de
 exibição, frames perdidos, frames em remontagem e keyframes pedidos.
@@ -316,13 +325,8 @@ pixels, então uma imagem de 1080 linhas sai do decoder numa superfície de
 padding são cortadas. Usar a altura visível no lugar da codificada desloca as
 cores e a imagem sai esverdeada.
 
-### Limitações conhecidas
-
-- Um transmissor por vez, 1:1. Mesh e vários espectadores simultâneos são
-  fase 5.
-- Não há RTCP nem feedback de taxa do receptor. O único controle de taxa é o
-  descarte local do `CapturePipeline`, herdado da fase 2.
-- Sem áudio.
+Veja [Limitações conhecidas](#limitações-conhecidas), onde as restrições de todas
+as fases estão reunidas.
 
 ## Voz (fase 4)
 
@@ -387,14 +391,8 @@ intervalos irregulares. As regras importam mais que o tamanho:
 Tudo isso é testado sem hardware de áudio: o buffer recebe um decoder falso e
 sequências construídas à mão.
 
-### Limitações conhecidas
-
-- Sem cancelamento de eco e sem detecção de atividade de voz (VAD) — é por isso
-  que o PTT é o padrão. Em "voz aberta" com caixas de som, o peer pode ouvir o
-  retorno do próprio áudio.
-- Sem RTCP: não há feedback de taxa do receptor, nem para vídeo nem para voz.
-- A porta de mídia aceita pacotes de qualquer origem; o `SenderId` do cabeçalho
-  (fase 5) diz de quem cada pacote se diz ser, mas não autentica ninguém.
+Veja [Limitações conhecidas](#limitações-conhecidas), onde as restrições de todas
+as fases estão reunidas.
 
 ## Sala em mesh (fase 5)
 
@@ -469,8 +467,9 @@ não é drenado no ritmo certo dessincroniza.
 O socket de mídia agora recebe datagramas de vários remetentes ao mesmo tempo, e
 o filtro por endereço de origem da fase 3 não serve mais — além de quebrar quando
 NAT ou Radmin remapeia a porta. O cabeçalho binário passou de 13 para 29 bytes
-com um `SenderId` (Guid de 16 bytes) explícito, e a versão do pacote foi para 2;
-um pacote versão 1 não decodifica mais.
+com um `SenderId` explícito (versão 2). A fase 6 trocou esse campo pelo
+`PeerId` novo, de 32 bytes, o que levou o cabeçalho a 45 bytes e a versão do
+pacote a 3; um pacote de versão anterior não decodifica mais.
 
 O receptor mantém um `FrameReassembler` **por remetente** (no máximo 8, já que o
 socket aceita bytes de qualquer origem) e descarta os próprios pacotes de volta.
@@ -526,17 +525,247 @@ Esse registro é a base para decidir se compensa implementar um relay/SFU depois
 que reintroduziria a dependência de servidor que o projeto evita — ou se o teto
 de ~3-4 pessoas é aceitável. **Documentar o limite é a entrega, não escondê-lo.**
 
-### Limitações conhecidas
+Veja [Limitações conhecidas](#limitações-conhecidas), onde as restrições de todas
+as fases estão reunidas.
 
+
+## Configurações (fase 6)
+
+Até a fase 5 as preferências viviam espalhadas: o seletor de monitor era um
+dropdown solto na janela de teste de captura, as portas só existiam como flag de
+linha de comando, e os dispositivos de áudio eram escolhidos dentro da conversa e
+de novo dentro da sala. A fase 6 consolida tudo em **Configurações**, no canto
+superior esquerdo da janela principal, persistido em
+`%APPDATA%/LisoP2P/settings.json`.
+
+- **Geral** — nome de usuário e o caminho do arquivo de configurações.
+- **Vídeo** — monitor, resolução de captura, fps alvo, e a tabela de bitrate por
+  degrau da fase 5 em **somente leitura**.
+- **Áudio** — dispositivo de entrada e de saída, fonte (microfone, som do
+  sistema, ambos), se usa push-to-talk e qual tecla (o botão "Definir" grava a
+  próxima tecla pressionada).
+- **Rede** — as três portas, com validação de faixa e um botão "Verificar
+  portas" que tenta um bind rápido para dizer se estão livres agora.
+- **Identidade** — o fingerprint desta instalação, com botão de copiar.
+
+Nada é aplicado campo a campo: tudo vale ao clicar em **Salvar**. Uma porta pela
+metade, digitada tecla a tecla, reiniciaria a rede a cada caractere.
+
+**A troca de dispositivo de áudio é a exceção e vale na hora**, inclusive com a
+voz já ativa.
+
+### Precedência: flag > arquivo > default
+
+As flags `--discovery-port`, `--session-port` e `--media-port` da fase 0
+continuam funcionando e **ganham do arquivo**. Isso não é preferência de estilo:
+o teste manual das fases 0 e 1 distingue duas instâncias na mesma máquina só pelo
+`--session-port`, e um `settings.json` capaz de sobrescrever isso quebraria o
+teste.
+
+A regra que deriva a porta de mídia do `--session-port` (fase 0) vale **só para a
+linha de comando**. Uma porta de sessão que veio do arquivo mantém a porta de
+mídia que veio do arquivo.
+
+Pela mesma razão, a pasta de dados só é aninhada sob o número da porta quando a
+**flag** está presente. Se ela seguisse a porta efetiva, mudar a porta em
+Configurações moveria o `identity.json` e entregaria uma identidade nova ao
+usuário sem aviso.
+
+### Aplicar uma porta nova sem reiniciar o processo
+
+Trocar uma porta derruba e reconstrói tudo o que depende dela — descoberta,
+sessões, sockets de mídia, compartilhamento de tela, voz, sala. O que sobrevive
+fica no provider raiz: identidade, configurações, histórico de chat, pipeline de
+captura e o banner de notificações. É por isso que o `AppHost` existe.
+
+A tela avisa antes: **as sessões abertas são encerradas e a sala é deixada.** O
+processo continua rodando.
+
+## Identidade e fingerprint (fase 6)
+
+A fase 0 gerava um `Guid` aleatório como `PeerId`. Era um identificador estável,
+nunca uma identidade criptográfica, e não havia nada que o usuário pudesse
+comparar.
+
+O `PeerId` agora **é** a chave pública Ed25519 do peer, 32 bytes. Carregar a
+chave inteira em vez de um hash dela significa que qualquer peer consegue
+calcular o fingerprint de quem ouviu falar — de uma lista de membros, de um
+`Hello` — sem uma segunda viagem, e deixa a porta aberta para assinar envelopes
+numa fase futura.
+
+A chave privada é gerada localmente e guardada em `identity.json` protegida pelo
+**DPAPI do Windows** (escopo do usuário atual). Ela nunca sai da classe que a
+carrega: nada no app assina nada ainda.
+
+O fingerprint é o **SHA-256 da chave pública**, exibido em 16 grupos de 4
+caracteres hex:
+
+```
+81AE 9F98 FB4A 1383 3D58 6A90 2825 D2E9 FB07 71A7 56B2 E099 95EC E72F 09B8 2F12
+```
+
+Ele aparece em dois lugares: em Configurações → Identidade (com botão de copiar)
+e, **uma vez por peer**, como notificação não-bloqueante quando a sessão abre
+("Conectado com fulano — fingerprint A1B2 C3D4…").
+
+**Nada é bloqueado se os fingerprints não conferirem.** Isto é verificação por
+transparência — dois usuários leem o valor em voz alta numa chamada e comparam —
+e não um portão de aprovação. Exigir confirmação manual antes de conectar é uma
+história de segurança maior do que esta fase cobre.
+
+### Mudança incompatível para quem vem das fases 0-5
+
+Um `identity.json` antigo tem um `Guid` e um nome. **Não há como transformar um
+Guid num par de chaves**, então a identidade é substituída na primeira execução
+após a atualização:
+
+- o **nome de usuário é preservado** (ele nunca foi a identidade);
+- o **`PeerId` é novo**, e os peers que já conheciam você passam a ver um
+  contato desconhecido;
+- o histórico de chat continua no `chat.db`, mas as linhas antigas apontam para
+  ids que não existem mais e ficam sem dono (elas não somem e não quebram nada);
+- o app avisa na tela, uma vez, quando a substituição acontece.
+
+Não há usuários em produção, e o cronograma aceita explicitamente esse custo.
+
+## Erros visíveis (fase 6)
+
+A política é uma frase: **erro de rede nunca é modal bloqueante, sempre é estado
+visível.** Não existe `MessageBox` travando a thread de UI em caminho de rede.
+
+`IErrorPresenter` tem dois modos:
+
+- `ShowTransient` para o que se resolve sozinho (reconectando, convite enviado);
+  some sozinho em alguns segundos.
+- `ShowPersistent` para o que exige ação (porta ocupada, nenhum encoder
+  disponível); fica até ser dispensado, e reportar a mesma condição de novo
+  **substitui** o aviso em vez de empilhar uma segunda cópia.
+
+Tudo o que passa pelo banner também vai para `%APPDATA%/LisoP2P/app.log`, com
+rotação por tamanho — é para depurar um problema relatado sem reproduzir do zero,
+não telemetria e não relatório remoto.
+
+O que os eventos que já existiam desde as fases anteriores passaram a produzir:
+
+| Situação | Como aparece agora |
+| --- | --- |
+| Peer cai durante o chat | Bolinha e texto do cabeçalho mudam de cor: verde conectado, amarelo conectando/reconectando, vermelho desconectado |
+| Reconexão esgota as tentativas (fase 1) | A sessão não some calada: aparece o botão **"Tentar novamente"** no cabeçalho da conversa |
+| Peer cai durante o compartilhamento de tela | A área de vídeo ganha o overlay "Conexão perdida com *fulano*" em vez de congelar no último frame sem explicação |
+| Peer cai durante a voz | O indicador de fala apaga e a bolinha do membro fica acinzentada, com tooltip "desconectado" |
+| Falha ao iniciar a captura | Aviso persistente com o erro específico e a sugestão de verificar atualização do driver de vídeo |
+| Nenhum encoder H.264 utilizável | Compartilhar tela fica desabilitado com o motivo no tooltip; o resto do app continua usável |
+| Porta em uso ao iniciar | Tela inicial dizendo qual porta conflitou, com atalho direto para Configurações → Rede |
+
+A tela de porta ocupada é o único ponto em que o app se recusa a prosseguir — e
+mesmo ela oferece "Abrir Configurações", "Tentar de novo" e "Sair" em vez de
+morrer.
+
+## Primeira execução
+
+Quando o par de chaves é gerado — primeira execução, ou pasta de dados apagada —
+o app abre uma tela única de boas-vindas: nome de usuário, o aviso sobre liberar
+as portas no Firewall do Windows (o mesmo do README, agora também na UI, já que
+nem todo mundo lê o README) e o fingerprint recém-criado. Um botão, "Começar".
+
+## Publicar o executável
+
+```
+dotnet publish LisoP2P.App -c Release -p:PublishProfile=win-x64
+```
+
+Sai um único `LisoP2P.exe` (~68 MB) em
+`LisoP2P.App/bin/Release/publish/win-x64/`, que roda **sem .NET instalado**.
+
+O perfil de publicação (`LisoP2P.App/Properties/PublishProfiles/win-x64.pubxml`)
+equivale a `--self-contained -p:PublishSingleFile=true
+-p:IncludeNativeLibrariesForSelfExtract=true
+-p:EnableCompressionInSingleFile=true`. Essas propriedades ficam no perfil e não
+no `.csproj` para que `dotnet build` e `dotnet run` continuem rápidos e
+independentes de RID durante o desenvolvimento.
+
+**Trimming fica desligado de propósito.** WPF não suporta trimming, e Vortice,
+NAudio e Concentus alcançam tipos por interop e reflexão — um build trimado
+quebra em runtime, silenciosamente, exatamente na máquina limpa que não tem SDK
+para depurar. O tamanho é o preço dessa certeza.
+
+### Checklist de teste em máquina limpa
+
+- [x] O `.exe` publicado inicia nesta máquina e abre a tela de primeira execução.
+- [x] `%APPDATA%/LisoP2P/` é criado no primeiro boot, com `identity.json`,
+      `settings.json` e `app.log` — sem depender de ter rodado `dotnet run` antes.
+- [ ] O `.exe` inicia numa máquina Windows **sem SDK nem runtime .NET**.
+- [ ] Captura de tela e voz funcionam nessa máquina limpa (é onde o interop
+      nativo de Vortice, NAudio e Concentus realmente se prova).
+- [ ] O Windows pede a liberação no firewall e a descoberta funciona depois.
+
+## Onde ficam os arquivos
+
+Tudo em `%APPDATA%/LisoP2P/`:
+
+| Arquivo | O que é |
+| --- | --- |
+| `identity.json` | Chave pública, chave privada protegida por DPAPI e nome de usuário |
+| `settings.json` | Portas, monitor, resolução, fps, dispositivos de áudio, push-to-talk |
+| `chat.db` | Histórico de chat 1:1 e de sala (SQLite) |
+| `app.log` | Erros e eventos da aplicação, com rotação por tamanho |
+| `logs/media.log` | Diagnóstico de captura e encode (fase 2) |
+| `capture-test.mp4` | Gravação da janela de teste de captura, quando ligada |
+
+Quando `--session-port` é passado com um valor diferente do padrão, tudo isso vai
+para `%APPDATA%/LisoP2P/<session-port>/` — é o que permite rodar duas instâncias
+na mesma máquina com identidades distintas.
+
+`settings.json` é texto e pode ser editado à mão; um valor inválido vira o
+default, nunca uma recusa a iniciar.
+
+## Limitações conhecidas
+
+Consolidado das fases 2, 3, 4 e 5, num lugar só.
+
+**Captura e vídeo**
+
+- Conteúdo protegido por DRM aparece **preto** na captura. É comportamento da
+  Desktop Duplication API, não um bug do app, e não há como contornar.
+- A captura é de um monitor inteiro; não há captura de janela específica.
+- Um apresentador de tela por vez na sala — decisão de produto, não limite de
+  protocolo.
+- Sem RTCP: não há feedback de taxa do receptor. O controle de taxa é o degrau
+  de bitrate por número de membros mais o descarte local do `CapturePipeline`.
+  Os números do degrau são um ponto de partida, não medição.
+
+**Voz**
+
+- Sem cancelamento de eco e sem detecção de atividade de voz (VAD) — é por isso
+  que o push-to-talk é o padrão. Em "voz aberta" com caixas de som, o peer pode
+  ouvir o retorno do próprio áudio.
+
+**Sala**
+
+- Teto prático de **3 a 4 pessoas**: o mesh é completo, sem SFU nem
+  retransmissor, então a banda de upload de quem compartilha escala com a
+  plateia. Onde exatamente isso dói ainda não foi medido (ver abaixo).
 - Convite é aceito automaticamente; não há recusa nem lista de bloqueio.
-- Um apresentador de tela por vez (decisão de produto, ver acima).
 - Sem consenso: a lista de membros converge por gossip aditivo, o que basta para
   3-4 nós e não pretende resolver partição de rede.
 - A saída implícita depende do timeout de reconexão da fase 1, então leva até
   ~15 s para a lista atualizar quando alguém cai sem avisar.
-- O `SenderId` identifica o remetente, mas **não o autentica**: nada impede um
-  peer na mesma rede de forjar o campo.
 
+**Segurança**
+
+- **Mensagens não são assinadas.** O par de chaves da fase 6 dá identidade
+  estável e verificável a olho; ele não autentica cada envelope. Um peer na
+  mesma rede pode forjar o `SenderId` de um pacote de mídia ou de um envelope.
+  Assinar e verificar cada mensagem é fase futura, não implementado.
+- Não há criptografia do tráfego: chat, tela e voz vão em claro pela LAN.
+- O fingerprint é verificação por transparência, não um portão: nada é
+  bloqueado se ele não conferir.
+
+**Operação**
+
+- Sem telemetria e sem relatório remoto de erro, por decisão. `app.log` local é
+  o que existe.
+- Windows apenas (WASAPI, DXGI, Media Foundation, DPAPI).
 
 ## Dependências
 
@@ -545,6 +774,10 @@ de ~3-4 pessoas é aceitável. **Documentar o limite é a entrega, não escondê
   sem DLL nativa extra). É o pacote `NAudio.Wasapi` e não o `NAudio` completo
   porque o metapacote só entrega WASAPI em target `-windows`, e `LisoP2P.Media`
   precisa continuar em `net10.0` puro.
+- `BouncyCastle.Cryptography` (Ed25519 gerenciado — o .NET 10 ainda não tem
+  Ed25519 avulso, e uma implementação gerenciada mantém o publish single-file
+  livre de uma biblioteca de criptografia nativa) e
+  `System.Security.Cryptography.ProtectedData` (DPAPI).
 - `MessagePack`, `Microsoft.Data.Sqlite`, `CommunityToolkit.Mvvm`,
   `MaterialDesignThemes`.
 
@@ -572,6 +805,11 @@ que evita que a segunda instância dispute o socket UDP com a primeira.
 Cada instância deve aparecer na lista de peers da outra em poucos segundos.
 Fechar uma delas deve removê-la da lista da outra em até 8 segundos.
 
+A instância com `--session-port` diferente do padrão usa
+`%APPDATA%/LisoP2P/<session-port>/` como pasta de dados, então as duas têm
+identidades, configurações e históricos separados. **A flag é o que decide isso**
+— trocar a porta em Configurações não move a pasta e não troca sua identidade.
+
 ## Testes
 
 ```
@@ -580,13 +818,15 @@ dotnet test
 
 ## Portas usadas
 
-- **47100/UDP** — descoberta de peers (broadcast), configurável via
-  `--discovery-port`.
+- **47100/UDP** — descoberta de peers (broadcast).
 - **47101/TCP** — sessão 1:1 (handshake, chat, keepalive, controle de
-  compartilhamento), configurável via `--session-port`.
-- **47102/UDP** — vídeo (`StreamId` 0) e voz (`StreamId` 1), configurável via
-  `--media-port` (por padrão, `--session-port + 1` quando a porta de sessão
-  não é a padrão).
+  compartilhamento).
+- **47102/UDP** — vídeo (`StreamId` 0) e voz (`StreamId` 1).
+
+As três são configuráveis em **Configurações → Rede** e pelas flags
+`--discovery-port`, `--session-port` e `--media-port`. A ordem de resolução é
+**flag > `settings.json` > default**; a flag `--media-port`, quando ausente e
+`--session-port` foi passado, vira `session-port + 1`.
 
 ## Firewall do Windows
 
