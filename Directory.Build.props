@@ -1,0 +1,12 @@
+<Project>
+
+  <!--
+    Release builds embed their symbols instead of writing a .pdb next to the assembly. Without
+    this the single-file publish leaves four loose .pdb files beside the exe, and "one file you
+    copy to the other machine" stops being true.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+</Project>
