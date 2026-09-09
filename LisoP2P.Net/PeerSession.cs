@@ -18,6 +18,9 @@ public sealed class PeerSession : IPeerSession
     private static readonly TimeSpan ReconnectSteadyDelay = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan MaxReconnectDuration = TimeSpan.FromMinutes(5);
 
+    /// <summary>Placeholder until the handshake tells us who is on the other end.</summary>
+    private static readonly PeerId UnknownPeer = new(new byte[PeerId.PublicKeySize]);
+
     private readonly IIdentityStore _identity;
     private readonly IDiscoveryService? _discovery;
     private readonly Connector? _connector;
@@ -30,7 +33,7 @@ public sealed class PeerSession : IPeerSession
     private Task? _runTask;
     private DateTimeOffset _lastPongAt;
 
-    public PeerId RemoteId { get; private set; } = new(Guid.Empty);
+    public PeerId RemoteId { get; private set; } = UnknownPeer;
     public string RemoteNickname { get; private set; } = "";
     public SessionState State { get; private set; } = SessionState.Connecting;
     public TimeSpan? RoundTripTime { get; private set; }
@@ -415,7 +418,7 @@ public sealed class PeerSession : IPeerSession
     {
         Version = ProtocolCodec.CurrentVersion,
         Type = MessageType.Ping,
-        SenderId = _identity.Id.Value,
+        SenderId = _identity.Id.PublicKeyBytes,
         TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
     };
 
@@ -423,7 +426,7 @@ public sealed class PeerSession : IPeerSession
     {
         Version = ProtocolCodec.CurrentVersion,
         Type = MessageType.Pong,
-        SenderId = _identity.Id.Value,
+        SenderId = _identity.Id.PublicKeyBytes,
         TimestampUnixMs = originalTimestampMs,
     };
 
@@ -433,7 +436,7 @@ public sealed class PeerSession : IPeerSession
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = type,
-            SenderId = _identity.Id.Value,
+            SenderId = _identity.Id.PublicKeyBytes,
             TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Payload = HelloPayloadCodec.Encode(new HelloPayload
             {
@@ -452,7 +455,7 @@ public sealed class PeerSession : IPeerSession
             {
                 Version = ProtocolCodec.CurrentVersion,
                 Type = MessageType.Disconnect,
-                SenderId = _identity.Id.Value,
+                SenderId = _identity.Id.PublicKeyBytes,
                 TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             };
             await FrameWriter.WriteAsync(stream, envelope, ct).ConfigureAwait(false);

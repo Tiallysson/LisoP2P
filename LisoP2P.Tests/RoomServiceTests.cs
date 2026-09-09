@@ -6,10 +6,10 @@ namespace LisoP2P.Tests;
 
 public class RoomServiceTests
 {
-    private static readonly Guid SelfId = Guid.Parse("0a000000-0000-0000-0000-00000000000a");
-    private static readonly PeerId PeerB = new(Guid.Parse("0b000000-0000-0000-0000-00000000000b"));
-    private static readonly PeerId PeerC = new(Guid.Parse("0c000000-0000-0000-0000-00000000000c"));
-    private static readonly PeerId PeerD = new(Guid.Parse("0d000000-0000-0000-0000-00000000000d"));
+    private static readonly PeerId SelfId = TestIds.From(0x0A);
+    private static readonly PeerId PeerB = TestIds.From(0x0B);
+    private static readonly PeerId PeerC = TestIds.From(0x0C);
+    private static readonly PeerId PeerD = TestIds.From(0x0D);
 
     private sealed class Harness : IAsyncDisposable
     {
@@ -36,7 +36,7 @@ public class RoomServiceTests
         {
             RoomId = room.Value,
             RoomName = "Sala",
-            Members = [.. members.Select(m => new RoomMemberInfo { PeerId = m.Value, Nickname = "n" })],
+            Members = [.. members.Select(m => new RoomMemberInfo { PeerId = m.PublicKeyBytes, Nickname = "n" })],
         });
 
     private static async Task<bool> WaitForAsync(Func<bool> condition)
@@ -58,7 +58,7 @@ public class RoomServiceTests
         harness.Rooms.CreateRoom("Equipe");
 
         var member = Assert.Single(harness.Rooms.Members);
-        Assert.Equal(SelfId, member.Id.Value);
+        Assert.Equal(SelfId, member.Id);
         Assert.True(member.IsSelf);
         Assert.Equal("Equipe", harness.Rooms.RoomName);
         Assert.Empty(harness.Rooms.RemoteMemberIds);
@@ -80,17 +80,17 @@ public class RoomServiceTests
 
         // C now gossips {A, B, C, D}.
         var sessionC = harness.Open(PeerC);
-        sessionC.Receive(MessageType.RoomMemberList, MemberList(room, new PeerId(SelfId), PeerB, PeerC, PeerD));
+        sessionC.Receive(MessageType.RoomMemberList, MemberList(room, SelfId, PeerB, PeerC, PeerD));
 
         Assert.True(await WaitForAsync(() => harness.Rooms.Members.Count == 4));
 
-        var ids = harness.Rooms.Members.Select(m => m.Id.Value).ToList();
+        var ids = harness.Rooms.Members.Select(m => m.Id).ToList();
 
         Assert.Equal(4, ids.Distinct().Count());
         Assert.Contains(SelfId, ids);
-        Assert.Contains(PeerB.Value, ids);
-        Assert.Contains(PeerC.Value, ids);
-        Assert.Contains(PeerD.Value, ids);
+        Assert.Contains(PeerB, ids);
+        Assert.Contains(PeerC, ids);
+        Assert.Contains(PeerD, ids);
         Assert.Single(harness.Rooms.Members, m => m.IsSelf);
     }
 

@@ -30,8 +30,8 @@ public class PeerSessionHandshakeTests
     {
         var (initiatorStream, acceptorStream) = await CreateLoopbackPairAsync();
 
-        var identityA = new StubIdentityStore(Guid.NewGuid(), "alice");
-        var identityB = new StubIdentityStore(Guid.NewGuid(), "bob");
+        var identityA = new StubIdentityStore(TestIds.New(), "alice");
+        var identityB = new StubIdentityStore(TestIds.New(), "bob");
         var discovery = new FakeDiscoveryService();
 
         var initiator = PeerSession.CreateOutbound(
@@ -46,8 +46,8 @@ public class PeerSessionHandshakeTests
             Assert.Equal(SessionState.Connected, acceptor.State);
             Assert.Equal("bob", initiator.RemoteNickname);
             Assert.Equal("alice", acceptor.RemoteNickname);
-            Assert.Equal(identityB.Id.Value, initiator.RemoteId.Value);
-            Assert.Equal(identityA.Id.Value, acceptor.RemoteId.Value);
+            Assert.Equal(identityB.Id, initiator.RemoteId);
+            Assert.Equal(identityA.Id, acceptor.RemoteId);
         }
         finally
         {
@@ -60,7 +60,7 @@ public class PeerSessionHandshakeTests
     public async Task Inbound_NonHelloBeforeHandshake_ClosesConnection()
     {
         var (attackerStream, acceptorStream) = await CreateLoopbackPairAsync();
-        var identity = new StubIdentityStore(Guid.NewGuid(), "bob");
+        var identity = new StubIdentityStore(TestIds.New(), "bob");
 
         var acceptor = PeerSession.CreateInbound(acceptorStream, identity);
 
@@ -68,7 +68,7 @@ public class PeerSessionHandshakeTests
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = MessageType.ChatMessage,
-            SenderId = Guid.NewGuid(),
+            SenderId = TestIds.New().PublicKeyBytes,
             TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Payload = ChatMessagePayloadCodec.Encode(new ChatMessagePayload { MessageId = Guid.NewGuid(), Text = "oi" }),
         };

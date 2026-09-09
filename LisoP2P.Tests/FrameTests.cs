@@ -9,7 +9,7 @@ public class FrameTests
     {
         Version = ProtocolCodec.CurrentVersion,
         Type = MessageType.Ping,
-        SenderId = Guid.NewGuid(),
+        SenderId = TestIds.New().PublicKeyBytes,
         TimestampUnixMs = 123456,
         Payload = [1, 2, 3, 4, 5],
     };

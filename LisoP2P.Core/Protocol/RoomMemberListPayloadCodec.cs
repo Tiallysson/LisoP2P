@@ -52,12 +52,19 @@ public static class RoomMemberListPayloadCodec
             return false;
         }
 
-        var seen = new HashSet<Guid>();
+        var seen = new HashSet<PeerId>();
         var members = new List<RoomMemberInfo>(incoming.Count);
 
         foreach (var member in incoming)
         {
-            if (member is null || member.PeerId == Guid.Empty || !seen.Add(member.PeerId))
+            if (member is null || !PeerId.IsValidKey(member.PeerId))
+            {
+                continue;
+            }
+
+            var id = new PeerId(member.PeerId);
+
+            if (!seen.Add(id))
             {
                 continue;
             }
@@ -67,7 +74,7 @@ public static class RoomMemberListPayloadCodec
             members.Add(new RoomMemberInfo
             {
                 PeerId = member.PeerId,
-                Nickname = nickname.Length > 0 ? nickname : NicknameRules.FallbackFor(new PeerId(member.PeerId)),
+                Nickname = nickname.Length > 0 ? nickname : NicknameRules.FallbackFor(id),
             });
         }
 

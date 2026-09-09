@@ -22,7 +22,7 @@ public sealed class ScreenShareSession : IScreenShareSession
     private readonly IMediaLogger _logger;
     private readonly Func<int, int, IVideoDecoder> _decoderFactory;
 
-    private readonly ConcurrentDictionary<Guid, IPeerSession> _observed = new();
+    private readonly ConcurrentDictionary<PeerId, IPeerSession> _observed = new();
     private readonly Channel<DecodableFrame> _decodeQueue = Channel.CreateBounded<DecodableFrame>(
         new BoundedChannelOptions(8) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
 
@@ -339,7 +339,7 @@ public sealed class ScreenShareSession : IScreenShareSession
 
     private void OnSessionOpened(IPeerSession session)
     {
-        if (!_observed.TryAdd(session.RemoteId.Value, session))
+        if (!_observed.TryAdd(session.RemoteId, session))
         {
             return;
         }
@@ -378,7 +378,7 @@ public sealed class ScreenShareSession : IScreenShareSession
 
     private void OnSessionClosed(PeerId id)
     {
-        _observed.TryRemove(id.Value, out _);
+        _observed.TryRemove(id, out _);
 
         bool wasTarget;
         List<PeerId> remaining;
@@ -618,7 +618,7 @@ public sealed class ScreenShareSession : IScreenShareSession
                 {
                     Version = ProtocolCodec.CurrentVersion,
                     Type = type,
-                    SenderId = _identity.Id.Value,
+                    SenderId = _identity.Id.PublicKeyBytes,
                     TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     Payload = payload,
                 },

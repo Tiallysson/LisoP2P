@@ -8,8 +8,8 @@ namespace LisoP2P.Tests;
 
 public class VoiceSessionTests
 {
-    private static readonly PeerId LocalId = new(new Guid("33333333-3333-3333-3333-333333333333"));
-    private static readonly PeerId RemoteId = new(new Guid("44444444-4444-4444-4444-444444444444"));
+    private static readonly PeerId LocalId = TestIds.From(0x33);
+    private static readonly PeerId RemoteId = TestIds.From(0x44);
 
     private sealed class FakeAudioCapture : IAudioCapture
     {
@@ -107,7 +107,7 @@ public class VoiceSessionTests
         {
             Voice = new VoiceSession(
                 new NetworkOptions { MediaPort = 51102 },
-                new StubIdentityStore(LocalId.Value, "local"),
+                new StubIdentityStore(LocalId, "local"),
                 Discovery,
                 Sessions,
                 Sender,

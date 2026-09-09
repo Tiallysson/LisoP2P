@@ -5,8 +5,8 @@ namespace LisoP2P.Tests;
 
 public class AudioMixerTests
 {
-    private static readonly PeerId PeerA = new(Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001"));
-    private static readonly PeerId PeerB = new(Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002"));
+    private static readonly PeerId PeerA = TestIds.From(0xA1);
+    private static readonly PeerId PeerB = TestIds.From(0xB2);
 
     private sealed class FakeJitterBuffer : IJitterBuffer
     {

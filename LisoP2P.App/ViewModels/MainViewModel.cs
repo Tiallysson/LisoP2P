@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Net;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -25,7 +25,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ICapturePipeline _pipeline;
     private readonly NetworkOptions _options;
 
-    public string ShortId => _identity.Id.Value.ToString("N")[..8];
+    public string ShortId => _identity.Id.ToString();
     public ObservableCollection<PeerViewModel> Peers { get; } = [];
 
     [ObservableProperty]
@@ -158,10 +158,10 @@ public sealed partial class MainViewModel : ObservableObject
     {
         Application.Current.Dispatcher.Invoke(() =>
         {
-            var existing = Peers.FirstOrDefault(p => p.Id.Value == peer.Id.Value);
+            var existing = Peers.FirstOrDefault(p => p.Id == peer.Id);
             existing?.UpdateFrom(peer);
 
-            if (ActiveChat?.PeerId.Value == peer.Id.Value)
+            if (ActiveChat?.PeerId == peer.Id)
             {
                 ActiveChat.UpdateNickname(peer.Nickname);
             }
@@ -172,7 +172,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         Application.Current.Dispatcher.Invoke(() =>
         {
-            var existing = Peers.FirstOrDefault(p => p.Id.Value == id.Value);
+            var existing = Peers.FirstOrDefault(p => p.Id == id);
             if (existing is not null)
             {
                 Peers.Remove(existing);

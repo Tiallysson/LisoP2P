@@ -55,8 +55,8 @@ public class NicknameUpdateTests
     {
         var (initiatorStream, acceptorStream) = await CreateLoopbackPairAsync();
 
-        var identityA = new StubIdentityStore(Guid.NewGuid(), "alice");
-        var identityB = new StubIdentityStore(Guid.NewGuid(), "bob");
+        var identityA = new StubIdentityStore(TestIds.New(), "alice");
+        var identityB = new StubIdentityStore(TestIds.New(), "bob");
 
         var initiator = PeerSession.CreateOutbound(
             identityB.Id, _ => Task.FromResult<Stream>(initiatorStream), identityA, new FakeDiscoveryService());
@@ -74,7 +74,7 @@ public class NicknameUpdateTests
                 {
                     Version = ProtocolCodec.CurrentVersion,
                     Type = MessageType.NicknameUpdate,
-                    SenderId = identityA.Id.Value,
+                    SenderId = identityA.Id.PublicKeyBytes,
                     TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     Payload = HelloPayloadCodec.Encode(new HelloPayload
                     {
@@ -102,8 +102,8 @@ public class NicknameUpdateTests
     {
         var (initiatorStream, acceptorStream) = await CreateLoopbackPairAsync();
 
-        var identityA = new StubIdentityStore(Guid.NewGuid(), "alice");
-        var identityB = new StubIdentityStore(Guid.NewGuid(), "bob");
+        var identityA = new StubIdentityStore(TestIds.New(), "alice");
+        var identityB = new StubIdentityStore(TestIds.New(), "bob");
 
         var initiator = PeerSession.CreateOutbound(
             identityB.Id, _ => Task.FromResult<Stream>(initiatorStream), identityA, new FakeDiscoveryService());
@@ -121,7 +121,7 @@ public class NicknameUpdateTests
                 {
                     Version = ProtocolCodec.CurrentVersion,
                     Type = MessageType.NicknameUpdate,
-                    SenderId = identityA.Id.Value,
+                    SenderId = identityA.Id.PublicKeyBytes,
                     TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     Payload = HelloPayloadCodec.Encode(new HelloPayload
                     {
@@ -146,9 +146,9 @@ public class NicknameUpdateTests
     [Fact]
     public async Task SessionManager_NicknameChange_NotifiesEveryOpenSession()
     {
-        var identity = new StubIdentityStore(Guid.NewGuid(), "alice");
+        var identity = new StubIdentityStore(TestIds.New(), "alice");
         var manager = new SessionManager(new NetworkOptions(), identity, new FakeDiscoveryService());
-        var session = new RecordingSession(new PeerId(Guid.NewGuid()));
+        var session = new RecordingSession(TestIds.New());
 
         await manager.RegisterSessionAsync(session, isOutbound: true);
 
@@ -157,7 +157,7 @@ public class NicknameUpdateTests
         var envelope = Assert.Single(session.Sent);
 
         Assert.Equal(MessageType.NicknameUpdate, envelope.Type);
-        Assert.Equal(identity.Id.Value, envelope.SenderId);
+        Assert.Equal(identity.Id.PublicKeyBytes, envelope.SenderId);
         Assert.True(HelloPayloadCodec.TryDecode(envelope.Payload, out var payload));
         Assert.Equal("Alice Nova", payload!.Nickname);
 

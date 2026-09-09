@@ -6,10 +6,31 @@ using LisoP2P.Net;
 
 namespace LisoP2P.Tests;
 
-internal sealed class StubIdentityStore(Guid id, string nickname) : IIdentityStore
+/// <summary>Deterministic peer ids: fase 6 keys are 32 bytes, so tests spell them out.</summary>
+internal static class TestIds
 {
-    public PeerId Id { get; } = new(id);
+    public static PeerId New() => From((byte)Random.Shared.Next(1, 256));
+
+    public static PeerId From(byte seed)
+    {
+        var bytes = new byte[PeerId.PublicKeySize];
+        Array.Fill(bytes, seed);
+        return new PeerId(bytes);
+    }
+}
+
+internal sealed class StubIdentityStore(PeerId id, string nickname) : IIdentityStore
+{
+    public PeerId Id { get; } = id;
     public string Nickname { get; private set; } = nickname;
+    public string Fingerprint => PeerFingerprint.For(Id);
+
+    public PeerIdentity Current => new()
+    {
+        PublicKey = Id.PublicKeyBytes,
+        Fingerprint = Fingerprint,
+        Nickname = Nickname,
+    };
 
     public event Action<string>? NicknameChanged;
 
@@ -39,7 +60,7 @@ internal sealed class FakeDiscoveryService : IDiscoveryService
 
 internal sealed class FakePeerSession : IPeerSession
 {
-    public PeerId RemoteId { get; init; } = new(Guid.Empty);
+    public PeerId RemoteId { get; init; } = TestIds.From(0);
     public string RemoteNickname => "peer";
     public SessionState State { get; set; } = SessionState.Connected;
     public TimeSpan? RoundTripTime => null;
@@ -61,7 +82,7 @@ internal sealed class FakePeerSession : IPeerSession
     {
         Version = ProtocolCodec.CurrentVersion,
         Type = type,
-        SenderId = RemoteId.Value,
+        SenderId = RemoteId.PublicKeyBytes,
         TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         Payload = payload,
     });

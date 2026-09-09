@@ -11,7 +11,7 @@ public sealed class UdpMediaSender : IMediaSender
 {
     private readonly Socket _socket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
     private readonly object _sync = new();
-    private readonly Guid _senderId;
+    private readonly PeerId _senderId;
 
     private uint _frameId;
     private uint _audioSequence;
@@ -26,7 +26,7 @@ public sealed class UdpMediaSender : IMediaSender
     /// The identity is stamped into every packet here rather than passed per call, so no send path
     /// can forget it and leave the receiver unable to tell mesh senders apart.
     /// </summary>
-    public UdpMediaSender(IIdentityStore identity) => _senderId = identity.Id.Value;
+    public UdpMediaSender(IIdentityStore identity) => _senderId = identity.Id;
 
     public void SendAudio(ReadOnlySpan<byte> opusData, IReadOnlyCollection<IPEndPoint> destinations)
     {

@@ -17,8 +17,8 @@ public sealed class UdpMediaReceiver : IMediaReceiver
     /// </summary>
     private const int MaxSenders = 8;
 
-    private readonly ConcurrentDictionary<Guid, FrameReassembler> _reassemblers = new();
-    private readonly Guid _selfId;
+    private readonly ConcurrentDictionary<PeerId, FrameReassembler> _reassemblers = new();
+    private readonly PeerId _selfId;
 
     private UdpClient? _socket;
     private CancellationTokenSource? _cts;
@@ -32,7 +32,7 @@ public sealed class UdpMediaReceiver : IMediaReceiver
     public event Action<PeerId>? FrameDropped;
     public event Action<PeerId, uint, byte[]>? AudioPacketReceived;
 
-    public UdpMediaReceiver(IIdentityStore identity) => _selfId = identity.Id.Value;
+    public UdpMediaReceiver(IIdentityStore identity) => _selfId = identity.Id;
 
     public Task StartAsync(int mediaPort, CancellationToken ct)
     {
@@ -63,7 +63,7 @@ public sealed class UdpMediaReceiver : IMediaReceiver
 
     public void Reset(PeerId sender)
     {
-        if (_reassemblers.TryGetValue(sender.Value, out var reassembler))
+        if (_reassemblers.TryGetValue(sender, out var reassembler))
         {
             reassembler.Reset();
         }
@@ -105,12 +105,12 @@ public sealed class UdpMediaReceiver : IMediaReceiver
                 continue;
             }
 
-            if (header.SenderId == _selfId)
+            var sender = header.SenderId;
+
+            if (sender == _selfId)
             {
                 continue;
             }
-
-            var sender = new PeerId(header.SenderId);
 
             if (header.StreamId == MediaPacketCodec.AudioStreamId)
             {
@@ -124,7 +124,7 @@ public sealed class UdpMediaReceiver : IMediaReceiver
                 continue;
             }
 
-            if (!TryGetReassembler(header.SenderId, out var reassembler))
+            if (!TryGetReassembler(sender, out var reassembler))
             {
                 continue;
             }
@@ -133,9 +133,9 @@ public sealed class UdpMediaReceiver : IMediaReceiver
         }
     }
 
-    private bool TryGetReassembler(Guid senderId, out FrameReassembler reassembler)
+    private bool TryGetReassembler(PeerId sender, out FrameReassembler reassembler)
     {
-        if (_reassemblers.TryGetValue(senderId, out reassembler!))
+        if (_reassemblers.TryGetValue(sender, out reassembler!))
         {
             return true;
         }
@@ -146,12 +146,11 @@ public sealed class UdpMediaReceiver : IMediaReceiver
             return false;
         }
 
-        var sender = new PeerId(senderId);
         var created = new FrameReassembler();
         created.FrameReassembled += frame => FrameReassembled?.Invoke(sender, frame);
         created.FrameDropped += () => FrameDropped?.Invoke(sender);
 
-        reassembler = _reassemblers.GetOrAdd(senderId, created);
+        reassembler = _reassemblers.GetOrAdd(sender, created);
         return true;
     }
 

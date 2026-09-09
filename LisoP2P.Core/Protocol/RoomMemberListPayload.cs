@@ -5,7 +5,8 @@ namespace LisoP2P.Core.Protocol;
 [MessagePackObject]
 public sealed class RoomMemberInfo
 {
-    [Key(0)] public Guid PeerId { get; init; }
+    /// <summary>The member's Ed25519 public key — see <see cref="LisoP2P.Core.PeerId"/>.</summary>
+    [Key(0)] public byte[] PeerId { get; init; } = [];
     [Key(1)] public string Nickname { get; init; } = "";
 }
 

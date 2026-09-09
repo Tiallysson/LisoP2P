@@ -60,5 +60,5 @@ public static class NicknameRules
 
     public static bool IsValid(string? value) => Sanitize(value).Length > 0;
 
-    public static string FallbackFor(PeerId id) => "user-" + id.Value.ToString("N")[..4];
+    public static string FallbackFor(PeerId id) => "user-" + id.ToHex()[..4].ToLowerInvariant();
 }

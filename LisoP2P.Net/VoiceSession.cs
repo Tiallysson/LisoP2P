@@ -33,9 +33,9 @@ public sealed class VoiceSession : IVoiceSession
     /// One jitter buffer per sender. Sequence numbers are per sender, so folding several sources
     /// into a single buffer would make every packet look out of order to the one before it.
     /// </summary>
-    private readonly ConcurrentDictionary<Guid, RemoteVoice> _remotes = new();
+    private readonly ConcurrentDictionary<PeerId, RemoteVoice> _remotes = new();
 
-    private readonly ConcurrentDictionary<Guid, IPeerSession> _observed = new();
+    private readonly ConcurrentDictionary<PeerId, IPeerSession> _observed = new();
     private readonly IAudioMixer _mixer;
     private readonly object _sync = new();
 
@@ -297,7 +297,7 @@ public sealed class VoiceSession : IVoiceSession
         _sessionManager.Sessions.TryGetValue(peer, out var session) && session.State == SessionState.Connected;
 
     private IJitterBuffer? ResolveBuffer(PeerId peer) =>
-        _remotes.TryGetValue(peer.Value, out var remote) ? remote.Buffer : null;
+        _remotes.TryGetValue(peer, out var remote) ? remote.Buffer : null;
 
     private float[]? PullPlayback() => _mixer.MixNextFrame();
 
@@ -360,7 +360,7 @@ public sealed class VoiceSession : IVoiceSession
     /// </summary>
     private RemoteVoice? EnsureRemote(PeerId sender)
     {
-        if (_remotes.TryGetValue(sender.Value, out var existing))
+        if (_remotes.TryGetValue(sender, out var existing))
         {
             return existing;
         }
@@ -396,7 +396,7 @@ public sealed class VoiceSession : IVoiceSession
         }
 
         var created = new RemoteVoice { Decoder = decoder, Buffer = new JitterBuffer(decoder) };
-        var stored = _remotes.GetOrAdd(sender.Value, created);
+        var stored = _remotes.GetOrAdd(sender, created);
 
         if (!ReferenceEquals(stored, created))
         {
@@ -418,7 +418,7 @@ public sealed class VoiceSession : IVoiceSession
 
     private void RemoveRemote(PeerId sender)
     {
-        if (!_remotes.TryRemove(sender.Value, out var remote))
+        if (!_remotes.TryRemove(sender, out var remote))
         {
             return;
         }
@@ -435,11 +435,11 @@ public sealed class VoiceSession : IVoiceSession
     }
 
     private void RefreshMixerSources() =>
-        _mixer.SetActiveSources([.. _remotes.Keys.Select(id => new PeerId(id))]);
+        _mixer.SetActiveSources([.. _remotes.Keys]);
 
     private void OnSessionOpened(IPeerSession session)
     {
-        if (!_observed.TryAdd(session.RemoteId.Value, session))
+        if (!_observed.TryAdd(session.RemoteId, session))
         {
             return;
         }
@@ -486,7 +486,7 @@ public sealed class VoiceSession : IVoiceSession
 
     private void OnSessionClosed(PeerId id)
     {
-        _observed.TryRemove(id.Value, out _);
+        _observed.TryRemove(id, out _);
         RemoveRemote(id);
 
         bool wasTarget;
@@ -524,7 +524,7 @@ public sealed class VoiceSession : IVoiceSession
             return;
         }
 
-        if (_remotes.ContainsKey(session.RemoteId.Value))
+        if (_remotes.ContainsKey(session.RemoteId))
         {
             return;
         }
@@ -554,7 +554,7 @@ public sealed class VoiceSession : IVoiceSession
                 {
                     Version = ProtocolCodec.CurrentVersion,
                     Type = type,
-                    SenderId = _identity.Id.Value,
+                    SenderId = _identity.Id.PublicKeyBytes,
                     TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     Payload = payload,
                 },
@@ -603,7 +603,7 @@ public sealed class VoiceSession : IVoiceSession
 
         foreach (var id in _remotes.Keys.ToArray())
         {
-            RemoveRemote(new PeerId(id));
+            RemoveRemote(id);
         }
 
         _capture.Dispose();

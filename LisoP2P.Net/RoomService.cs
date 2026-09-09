@@ -20,9 +20,9 @@ public sealed class RoomService : IRoomService
     private readonly ISessionManager _sessionManager;
     private readonly Func<DateTimeOffset> _clock;
 
-    private readonly Dictionary<Guid, RoomMember> _members = [];
-    private readonly Dictionary<Guid, DateTimeOffset> _speakingSince = [];
-    private readonly ConcurrentDictionary<Guid, IPeerSession> _observed = new();
+    private readonly Dictionary<PeerId, RoomMember> _members = [];
+    private readonly Dictionary<PeerId, DateTimeOffset> _speakingSince = [];
+    private readonly ConcurrentDictionary<PeerId, IPeerSession> _observed = new();
     private readonly object _sync = new();
 
     private Timer? _timer;
@@ -117,7 +117,7 @@ public sealed class RoomService : IRoomService
             _roomName = sanitized.Length > 0 ? sanitized : "Sala";
             _members.Clear();
             _speakingSince.Clear();
-            _members[_identity.Id.Value] = CreateSelfMember();
+            _members[_identity.Id] = CreateSelfMember();
         }
 
         MembersChanged?.Invoke();
@@ -184,7 +184,7 @@ public sealed class RoomService : IRoomService
             _selfSpeaking = speaking;
             _selfSpeakingAnnouncedAt = _clock();
 
-            if (_members.TryGetValue(_identity.Id.Value, out var self))
+            if (_members.TryGetValue(_identity.Id, out var self))
             {
                 self.IsSpeaking = speaking;
             }
@@ -290,7 +290,7 @@ public sealed class RoomService : IRoomService
 
     private void OnSessionOpened(IPeerSession session)
     {
-        if (!_observed.TryAdd(session.RemoteId.Value, session))
+        if (!_observed.TryAdd(session.RemoteId, session))
         {
             return;
         }
@@ -302,7 +302,7 @@ public sealed class RoomService : IRoomService
 
         lock (_sync)
         {
-            if (_members.TryGetValue(session.RemoteId.Value, out var member))
+            if (_members.TryGetValue(session.RemoteId, out var member))
             {
                 member.ConnectionState = session.State;
                 isMember = true;
@@ -323,7 +323,7 @@ public sealed class RoomService : IRoomService
 
         lock (_sync)
         {
-            if (_members.TryGetValue(peer.Value, out var member) && member.ConnectionState != state)
+            if (_members.TryGetValue(peer, out var member) && member.ConnectionState != state)
             {
                 member.ConnectionState = state;
                 changed = true;
@@ -338,7 +338,7 @@ public sealed class RoomService : IRoomService
 
     private void OnSessionClosed(PeerId id)
     {
-        _observed.TryRemove(id.Value, out _);
+        _observed.TryRemove(id, out _);
         _ = RemoveMemberAndPropagateAsync(id);
     }
 
@@ -382,7 +382,7 @@ public sealed class RoomService : IRoomService
                 _roomName = payload.RoomName.Length > 0 ? payload.RoomName : "Sala";
                 _members.Clear();
                 _speakingSince.Clear();
-                _members[_identity.Id.Value] = CreateSelfMember();
+                _members[_identity.Id] = CreateSelfMember();
             }
         }
 
@@ -433,18 +433,18 @@ public sealed class RoomService : IRoomService
 
         lock (_sync)
         {
-            if (_roomId?.Value != payload.RoomId || !_members.TryGetValue(session.RemoteId.Value, out var member))
+            if (_roomId?.Value != payload.RoomId || !_members.TryGetValue(session.RemoteId, out var member))
             {
                 return;
             }
 
             if (payload.IsSpeaking)
             {
-                _speakingSince[session.RemoteId.Value] = _clock();
+                _speakingSince[session.RemoteId] = _clock();
             }
             else
             {
-                _speakingSince.Remove(session.RemoteId.Value);
+                _speakingSince.Remove(session.RemoteId);
             }
 
             if (member.IsSpeaking != payload.IsSpeaking)
@@ -473,12 +473,14 @@ public sealed class RoomService : IRoomService
         {
             foreach (var info in payload.Members)
             {
-                if (info.PeerId == _identity.Id.Value)
+                var id = new PeerId(info.PeerId);
+
+                if (id == _identity.Id)
                 {
                     continue;
                 }
 
-                if (_members.TryGetValue(info.PeerId, out var existing))
+                if (_members.TryGetValue(id, out var existing))
                 {
                     if (!string.Equals(existing.Nickname, info.Nickname, StringComparison.Ordinal))
                     {
@@ -488,22 +490,22 @@ public sealed class RoomService : IRoomService
                     continue;
                 }
 
-                _members[info.PeerId] = new RoomMember
+                _members[id] = new RoomMember
                 {
-                    Id = new PeerId(info.PeerId),
+                    Id = id,
                     Nickname = info.Nickname,
-                    ConnectionState = _sessionManager.Sessions.TryGetValue(new PeerId(info.PeerId), out var open)
+                    ConnectionState = _sessionManager.Sessions.TryGetValue(id, out var open)
                         ? open.State
                         : SessionState.Connecting,
                 };
 
-                learned.Add(new PeerId(info.PeerId));
+                learned.Add(id);
             }
 
             // The sender is a member by virtue of having spoken to us about the room.
-            if (!_members.ContainsKey(source.RemoteId.Value))
+            if (!_members.ContainsKey(source.RemoteId))
             {
-                _members[source.RemoteId.Value] = new RoomMember
+                _members[source.RemoteId] = new RoomMember
                 {
                     Id = source.RemoteId,
                     Nickname = NicknameRules.Sanitize(source.RemoteNickname) is { Length: > 0 } name
@@ -539,7 +541,7 @@ public sealed class RoomService : IRoomService
 
         if (discovered is null)
         {
-            Log?.Invoke($"Membro {peer.Value:N} ainda não foi descoberto na rede.");
+            Log?.Invoke($"Membro {peer} ainda não foi descoberto na rede.");
             return;
         }
 
@@ -581,12 +583,12 @@ public sealed class RoomService : IRoomService
 
         lock (_sync)
         {
-            if (_roomId is null || !_members.Remove(peer.Value))
+            if (_roomId is null || !_members.Remove(peer))
             {
                 return;
             }
 
-            _speakingSince.Remove(peer.Value);
+            _speakingSince.Remove(peer);
             targets = ResolveSessionsLocked(peer);
         }
 
@@ -640,7 +642,7 @@ public sealed class RoomService : IRoomService
                 RoomName = _roomName,
                 Members = [.. _members.Values.Select(m => new RoomMemberInfo
                 {
-                    PeerId = m.Id.Value,
+                    PeerId = m.Id.PublicKeyBytes,
                     Nickname = m.Nickname,
                 })],
             });
@@ -656,7 +658,7 @@ public sealed class RoomService : IRoomService
                 {
                     Version = ProtocolCodec.CurrentVersion,
                     Type = type,
-                    SenderId = _identity.Id.Value,
+                    SenderId = _identity.Id.PublicKeyBytes,
                     TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     Payload = payload,
                 },

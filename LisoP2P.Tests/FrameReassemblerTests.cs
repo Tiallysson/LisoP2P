@@ -1,3 +1,4 @@
+using LisoP2P.Core;
 using LisoP2P.Core.Protocol;
 using LisoP2P.Media;
 using LisoP2P.Net;
@@ -6,7 +7,7 @@ namespace LisoP2P.Tests;
 
 public class FrameReassemblerTests
 {
-    private static readonly Guid Sender = Guid.Parse("77777777-0000-0000-0000-000000000001");
+    private static readonly PeerId Sender = TestIds.From(0x77);
 
     private static MediaPacketHeader Header(uint frameId, int index, int count, bool keyframe = false) =>
         new(

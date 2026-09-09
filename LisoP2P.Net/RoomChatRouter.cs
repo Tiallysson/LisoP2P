@@ -17,7 +17,7 @@ public sealed class RoomChatRouter : IRoomChatRouter
     private readonly ISessionManager _sessionManager;
     private readonly IRoomService _rooms;
 
-    private readonly ConcurrentDictionary<Guid, IPeerSession> _observed = new();
+    private readonly ConcurrentDictionary<PeerId, IPeerSession> _observed = new();
     private readonly HashSet<Guid> _recent = [];
     private readonly Queue<Guid> _recentOrder = new();
     private readonly object _sync = new();
@@ -34,7 +34,7 @@ public sealed class RoomChatRouter : IRoomChatRouter
     public Task StartAsync(CancellationToken ct)
     {
         _sessionManager.SessionOpened += OnSessionOpened;
-        _sessionManager.SessionClosed += id => _observed.TryRemove(id.Value, out _);
+        _sessionManager.SessionClosed += id => _observed.TryRemove(id, out _);
 
         foreach (var session in _sessionManager.Sessions.Values)
         {
@@ -59,7 +59,7 @@ public sealed class RoomChatRouter : IRoomChatRouter
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = MessageType.ChatMessage,
-            SenderId = _identity.Id.Value,
+            SenderId = _identity.Id.PublicKeyBytes,
             TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Payload = payload,
         };
@@ -88,7 +88,7 @@ public sealed class RoomChatRouter : IRoomChatRouter
 
     private void OnSessionOpened(IPeerSession session)
     {
-        if (!_observed.TryAdd(session.RemoteId.Value, session))
+        if (!_observed.TryAdd(session.RemoteId, session))
         {
             return;
         }

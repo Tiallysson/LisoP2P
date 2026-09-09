@@ -27,7 +27,7 @@ public class SqliteChatStoreTests : IDisposable
     [Fact]
     public async Task SaveThenMarkDelivered_UpdatesDeliveredFlag()
     {
-        var peer = new PeerId(Guid.NewGuid());
+        var peer = TestIds.New();
         var message = NewMessage(peer, "oi", DateTimeOffset.UtcNow, delivered: false);
 
         await _store.SaveMessageAsync(message);
@@ -42,7 +42,7 @@ public class SqliteChatStoreTests : IDisposable
     [Fact]
     public async Task GetHistoryAsync_ReturnsMessagesOrderedBySentAt()
     {
-        var peer = new PeerId(Guid.NewGuid());
+        var peer = TestIds.New();
         var older = NewMessage(peer, "first", DateTimeOffset.UtcNow.AddMinutes(-5), delivered: true);
         var newer = NewMessage(peer, "second", DateTimeOffset.UtcNow, delivered: true);
 
@@ -59,7 +59,7 @@ public class SqliteChatStoreTests : IDisposable
     [Fact]
     public async Task SaveMessageAsync_DuplicateMessageId_DoesNotDuplicateRow()
     {
-        var peer = new PeerId(Guid.NewGuid());
+        var peer = TestIds.New();
         var message = NewMessage(peer, "oi", DateTimeOffset.UtcNow, delivered: false);
 
         await _store.SaveMessageAsync(message);
@@ -73,7 +73,7 @@ public class SqliteChatStoreTests : IDisposable
     [Fact]
     public async Task GetUndeliveredAsync_ReturnsOnlyUndeliveredOutgoingMessages()
     {
-        var peer = new PeerId(Guid.NewGuid());
+        var peer = TestIds.New();
         var pending = NewMessage(peer, "pendente", DateTimeOffset.UtcNow.AddMinutes(-1), delivered: false);
         var delivered = NewMessage(peer, "entregue", DateTimeOffset.UtcNow, delivered: true);
         var incoming = new StoredMessage

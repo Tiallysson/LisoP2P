@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
@@ -488,7 +488,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             {
                 Version = ProtocolCodec.CurrentVersion,
                 Type = MessageType.ChatAck,
-                SenderId = _identity.Id.Value,
+                SenderId = _identity.Id.PublicKeyBytes,
                 TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Payload = ChatAckPayloadCodec.Encode(new ChatAckPayload { MessageId = payload.MessageId }),
             };
@@ -551,7 +551,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = MessageType.ChatMessage,
-            SenderId = _identity.Id.Value,
+            SenderId = _identity.Id.PublicKeyBytes,
             TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Payload = ChatMessagePayloadCodec.Encode(new ChatMessagePayload { MessageId = messageId, Text = text }),
         };

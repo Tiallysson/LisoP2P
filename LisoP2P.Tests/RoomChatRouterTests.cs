@@ -6,9 +6,9 @@ namespace LisoP2P.Tests;
 
 public class RoomChatRouterTests
 {
-    private static readonly Guid SelfId = Guid.Parse("1a000000-0000-0000-0000-00000000000a");
-    private static readonly PeerId PeerB = new(Guid.Parse("1b000000-0000-0000-0000-00000000000b"));
-    private static readonly PeerId PeerC = new(Guid.Parse("1c000000-0000-0000-0000-00000000000c"));
+    private static readonly PeerId SelfId = TestIds.From(0x1A);
+    private static readonly PeerId PeerB = TestIds.From(0x1B);
+    private static readonly PeerId PeerC = TestIds.From(0x1C);
 
     private sealed class Harness : IAsyncDisposable
     {
@@ -39,7 +39,7 @@ public class RoomChatRouterTests
                 {
                     RoomId = room.Value,
                     RoomName = "Sala",
-                    Members = [new RoomMemberInfo { PeerId = peer.Value, Nickname = "n" }],
+                    Members = [new RoomMemberInfo { PeerId = peer.PublicKeyBytes, Nickname = "n" }],
                 }));
             }
 

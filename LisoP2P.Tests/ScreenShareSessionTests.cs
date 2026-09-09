@@ -9,8 +9,8 @@ namespace LisoP2P.Tests;
 
 public class ScreenShareSessionTests
 {
-    private static readonly PeerId LocalId = new(new Guid("11111111-1111-1111-1111-111111111111"));
-    private static readonly PeerId RemoteId = new(new Guid("22222222-2222-2222-2222-222222222222"));
+    private static readonly PeerId LocalId = TestIds.From(0x11);
+    private static readonly PeerId RemoteId = TestIds.From(0x22);
 
     private sealed class FakeCapturePipeline : ICapturePipeline
     {
@@ -90,7 +90,7 @@ public class ScreenShareSessionTests
         {
             Share = new ScreenShareSession(
                 new NetworkOptions { MediaPort = 51102 },
-                new StubIdentityStore(LocalId.Value, "local"),
+                new StubIdentityStore(LocalId, "local"),
                 Discovery,
                 Sessions,
                 Pipeline,

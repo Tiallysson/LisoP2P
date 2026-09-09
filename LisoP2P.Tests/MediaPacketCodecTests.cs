@@ -1,10 +1,11 @@
+using LisoP2P.Core;
 using LisoP2P.Core.Protocol;
 
 namespace LisoP2P.Tests;
 
 public class MediaPacketCodecTests
 {
-    private static readonly Guid Sender = Guid.Parse("11111111-2222-3333-4444-555555555555");
+    private static readonly PeerId Sender = TestIds.From(0x55);
 
     [Fact]
     public void Encode_Decode_RoundTripsHeaderAndPayload()

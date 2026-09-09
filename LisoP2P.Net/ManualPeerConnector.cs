@@ -20,7 +20,7 @@ public sealed class ManualPeerConnector(NetworkOptions options, IIdentityStore i
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = MessageType.Announce,
-            SenderId = identity.Id.Value,
+            SenderId = identity.Id.PublicKeyBytes,
             TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Payload = AnnouncePayloadCodec.Encode(payload),
         };

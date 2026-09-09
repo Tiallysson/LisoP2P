@@ -11,7 +11,7 @@ public class ProtocolCodecTests
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = MessageType.Announce,
-            SenderId = Guid.NewGuid(),
+            SenderId = TestIds.New().PublicKeyBytes,
             TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Payload = [1, 2, 3, 4],
         };
@@ -55,7 +55,7 @@ public class ProtocolCodecTests
         {
             Version = 99,
             Type = MessageType.Announce,
-            SenderId = Guid.NewGuid(),
+            SenderId = TestIds.New().PublicKeyBytes,
             TimestampUnixMs = 0,
             Payload = [],
         };
@@ -73,7 +73,7 @@ public class ProtocolCodecTests
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = (MessageType)255,
-            SenderId = Guid.NewGuid(),
+            SenderId = TestIds.New().PublicKeyBytes,
             TimestampUnixMs = 0,
             Payload = [],
         };

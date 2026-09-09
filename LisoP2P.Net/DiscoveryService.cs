@@ -10,7 +10,7 @@ public sealed class DiscoveryService : IDiscoveryService
 {
     private readonly NetworkOptions _options;
     private readonly IIdentityStore _identity;
-    private readonly ConcurrentDictionary<Guid, DiscoveredPeer> _peers = new();
+    private readonly ConcurrentDictionary<PeerId, DiscoveredPeer> _peers = new();
     private readonly UdpClient _socket;
     private readonly Timer _announceTimer;
     private readonly Timer _sweepTimer;
@@ -77,7 +77,14 @@ public sealed class DiscoveryService : IDiscoveryService
 
     private void HandleDatagram(byte[] buffer, IPEndPoint remote)
     {
-        if (!ProtocolCodec.TryDecode(buffer, out var envelope) || envelope is null || envelope.SenderId == _identity.Id.Value)
+        if (!ProtocolCodec.TryDecode(buffer, out var envelope) || envelope is null)
+        {
+            return;
+        }
+
+        var sender = new PeerId(envelope.SenderId);
+
+        if (sender == _identity.Id)
         {
             return;
         }
@@ -85,30 +92,29 @@ public sealed class DiscoveryService : IDiscoveryService
         switch (envelope.Type)
         {
             case MessageType.Announce:
-                HandleAnnounce(envelope, remote);
+                HandleAnnounce(sender, envelope, remote);
                 break;
             case MessageType.Goodbye:
-                HandleGoodbye(envelope.SenderId);
+                HandleGoodbye(sender);
                 break;
         }
     }
 
     private void OnNicknameChanged(string nickname) => SendBroadcastAnnounce();
 
-    private void HandleAnnounce(Envelope envelope, IPEndPoint remote)
+    private void HandleAnnounce(PeerId id, Envelope envelope, IPEndPoint remote)
     {
         if (!AnnouncePayloadCodec.TryDecode(envelope.Payload, out var payload) || payload is null)
         {
             return;
         }
 
-        var id = new PeerId(envelope.SenderId);
         var nickname = ResolveNickname(payload.Nickname, id);
         var now = DateTimeOffset.UtcNow;
         var isNew = false;
 
         var peer = _peers.AddOrUpdate(
-            envelope.SenderId,
+            id,
             _ =>
             {
                 isNew = true;
@@ -145,11 +151,11 @@ public sealed class DiscoveryService : IDiscoveryService
         return sanitized.Length > 0 ? sanitized : NicknameRules.FallbackFor(id);
     }
 
-    private void HandleGoodbye(Guid senderId)
+    private void HandleGoodbye(PeerId senderId)
     {
         if (_peers.TryRemove(senderId, out _))
         {
-            PeerLost?.Invoke(new PeerId(senderId));
+            PeerLost?.Invoke(senderId);
         }
     }
 
@@ -158,7 +164,7 @@ public sealed class DiscoveryService : IDiscoveryService
         var cutoff = DateTimeOffset.UtcNow - _options.PeerTimeout;
         foreach (var peer in _peers.Values)
         {
-            if (peer.LastSeen < cutoff && _peers.TryRemove(peer.Id.Value, out _))
+            if (peer.LastSeen < cutoff && _peers.TryRemove(peer.Id, out _))
             {
                 PeerLost?.Invoke(peer.Id);
             }
@@ -188,7 +194,7 @@ public sealed class DiscoveryService : IDiscoveryService
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = MessageType.Announce,
-            SenderId = _identity.Id.Value,
+            SenderId = _identity.Id.PublicKeyBytes,
             TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Payload = AnnouncePayloadCodec.Encode(payload),
         };
@@ -226,7 +232,7 @@ public sealed class DiscoveryService : IDiscoveryService
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = MessageType.Goodbye,
-            SenderId = _identity.Id.Value,
+            SenderId = _identity.Id.PublicKeyBytes,
             TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
         foreach (var address in GetTargetAddresses())

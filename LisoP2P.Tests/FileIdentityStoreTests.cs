@@ -11,7 +11,8 @@ public class FileIdentityStoreTests : IDisposable
     {
         var store = new FileIdentityStore(_directory);
 
-        Assert.NotEqual(Guid.Empty, store.Id.Value);
+        Assert.Equal(PeerId.PublicKeySize, store.Id.PublicKeyBytes.Length);
+        Assert.NotEqual(new byte[PeerId.PublicKeySize], store.Id.PublicKeyBytes);
         Assert.StartsWith("user-", store.Nickname);
     }
 

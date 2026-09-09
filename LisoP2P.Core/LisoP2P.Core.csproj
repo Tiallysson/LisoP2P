@@ -7,7 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Managed Ed25519: .NET 10 still has no standalone Ed25519, and a managed implementation
+         keeps the single-file publish of fase 6 free of a native crypto library. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
     <PackageReference Include="MessagePack" Version="3.1.8" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
   </ItemGroup>
 
 </Project>

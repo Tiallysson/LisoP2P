@@ -63,7 +63,7 @@ public sealed class SqliteChatStore : IChatStore
             VALUES ($messageId, $peerId, $isOutgoing, $text, $sentAt, $delivered, $roomId);
             """;
         command.Parameters.AddWithValue("$messageId", message.MessageId.ToString());
-        command.Parameters.AddWithValue("$peerId", message.PeerId.Value.ToString());
+        command.Parameters.AddWithValue("$peerId", message.PeerId.ToHex());
         command.Parameters.AddWithValue("$isOutgoing", message.IsOutgoing ? 1 : 0);
         command.Parameters.AddWithValue("$text", message.Text);
         command.Parameters.AddWithValue("$sentAt", message.SentAt.ToUnixTimeMilliseconds());
@@ -94,7 +94,7 @@ public sealed class SqliteChatStore : IChatStore
             ORDER BY sent_at ASC
             LIMIT $limit;
             """;
-        command.Parameters.AddWithValue("$peerId", peer.Value.ToString());
+        command.Parameters.AddWithValue("$peerId", peer.ToHex());
         command.Parameters.AddWithValue("$limit", limit);
 
         return await ReadAllAsync(command).ConfigureAwait(false);
@@ -127,7 +127,7 @@ public sealed class SqliteChatStore : IChatStore
             WHERE peer_id = $peerId AND is_outgoing = 1 AND delivered = 0 AND room_id IS NULL
             ORDER BY sent_at ASC;
             """;
-        command.Parameters.AddWithValue("$peerId", peer.Value.ToString());
+        command.Parameters.AddWithValue("$peerId", peer.ToHex());
 
         return await ReadAllAsync(command).ConfigureAwait(false);
     }
@@ -141,7 +141,7 @@ public sealed class SqliteChatStore : IChatStore
             VALUES ($peerId, $nickname, $lastSeen)
             ON CONFLICT(peer_id) DO UPDATE SET nickname = excluded.nickname, last_seen = excluded.last_seen;
             """;
-        command.Parameters.AddWithValue("$peerId", id.Value.ToString());
+        command.Parameters.AddWithValue("$peerId", id.ToHex());
         command.Parameters.AddWithValue("$nickname", nickname);
         command.Parameters.AddWithValue("$lastSeen", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         await command.ExecuteNonQueryAsync().ConfigureAwait(false);
@@ -156,7 +156,7 @@ public sealed class SqliteChatStore : IChatStore
             results.Add(new StoredMessage
             {
                 MessageId = Guid.Parse(reader.GetString(0)),
-                PeerId = new PeerId(Guid.Parse(reader.GetString(1))),
+                PeerId = ParsePeerId(reader.GetString(1)),
                 IsOutgoing = reader.GetInt64(2) != 0,
                 Text = reader.GetString(3),
                 SentAt = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4)),
@@ -167,6 +167,15 @@ public sealed class SqliteChatStore : IChatStore
 
         return results;
     }
+
+    /// <summary>
+    /// A row written before fase 6 holds a Guid, not a public key. It cannot name a peer any more,
+    /// so it decodes to the all-zero id: the history stays readable instead of throwing on load.
+    /// </summary>
+    private static PeerId ParsePeerId(string stored) =>
+        PeerId.TryParseHex(stored, out var id) && id is not null ? id : LegacyPeerId;
+
+    private static readonly PeerId LegacyPeerId = new(new byte[PeerId.PublicKeySize]);
 
     private async Task<SqliteConnection> OpenAsync()
     {

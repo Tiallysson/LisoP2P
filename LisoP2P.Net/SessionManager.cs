@@ -11,14 +11,14 @@ public sealed class SessionManager : ISessionManager
     private readonly NetworkOptions _options;
     private readonly IIdentityStore _identity;
     private readonly IDiscoveryService _discovery;
-    private readonly ConcurrentDictionary<Guid, (IPeerSession Session, bool IsOutbound)> _sessions = new();
+    private readonly ConcurrentDictionary<PeerId, (IPeerSession Session, bool IsOutbound)> _sessions = new();
 
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private Task? _acceptLoop;
 
     public IReadOnlyDictionary<PeerId, IPeerSession> Sessions =>
-        _sessions.ToDictionary(kv => new PeerId(kv.Key), kv => kv.Value.Session);
+        _sessions.ToDictionary(kv => kv.Key, kv => kv.Value.Session);
 
     public event Action<IPeerSession>? SessionOpened;
     public event Action<PeerId>? SessionClosed;
@@ -37,7 +37,7 @@ public sealed class SessionManager : ISessionManager
         {
             Version = ProtocolCodec.CurrentVersion,
             Type = MessageType.NicknameUpdate,
-            SenderId = _identity.Id.Value,
+            SenderId = _identity.Id.PublicKeyBytes,
             TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Payload = HelloPayloadCodec.Encode(new HelloPayload
             {
@@ -88,7 +88,7 @@ public sealed class SessionManager : ISessionManager
         if (session.State == SessionState.Closed)
         {
             await session.DisposeAsync().ConfigureAwait(false);
-            throw new InvalidOperationException($"Handshake with peer {peer.Id.Value} failed.");
+            throw new InvalidOperationException($"Handshake with peer {peer.Id} failed.");
         }
 
         await RegisterSessionAsync(session, isOutbound: true).ConfigureAwait(false);
@@ -143,8 +143,8 @@ public sealed class SessionManager : ISessionManager
     /// </summary>
     internal async Task RegisterSessionAsync(IPeerSession session, bool isOutbound)
     {
-        var key = session.RemoteId.Value;
-        var keepOutbound = _identity.Id.Value.CompareTo(key) < 0;
+        var key = session.RemoteId;
+        var keepOutbound = _identity.Id.CompareTo(key) < 0;
 
         var accepted = false;
         var replacedExisting = false;
@@ -186,14 +186,14 @@ public sealed class SessionManager : ISessionManager
 
         if (replacedExisting)
         {
-            SessionClosed?.Invoke(new PeerId(key));
+            SessionClosed?.Invoke(key);
         }
 
         session.StateChanged += state => OnSessionStateChanged(key, session, state);
         SessionOpened?.Invoke(session);
     }
 
-    private void OnSessionStateChanged(Guid key, IPeerSession session, SessionState state)
+    private void OnSessionStateChanged(PeerId key, IPeerSession session, SessionState state)
     {
         if (state != SessionState.Closed)
         {
@@ -202,12 +202,12 @@ public sealed class SessionManager : ISessionManager
 
         if (_sessions.TryGetValue(key, out var current) && ReferenceEquals(current.Session, session))
         {
-            var removed = ((ICollection<KeyValuePair<Guid, (IPeerSession Session, bool IsOutbound)>>)_sessions)
-                .Remove(new KeyValuePair<Guid, (IPeerSession, bool)>(key, current));
+            var removed = ((ICollection<KeyValuePair<PeerId, (IPeerSession Session, bool IsOutbound)>>)_sessions)
+                .Remove(new KeyValuePair<PeerId, (IPeerSession, bool)>(key, current));
 
             if (removed)
             {
-                SessionClosed?.Invoke(new PeerId(key));
+                SessionClosed?.Invoke(key);
             }
         }
     }

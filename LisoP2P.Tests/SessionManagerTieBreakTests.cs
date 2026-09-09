@@ -33,32 +33,32 @@ public class SessionManagerTieBreakTests
     [Fact]
     public async Task RegisterSession_BothSidesConverge_OnTheSameOutcome()
     {
-        var smallerId = Guid.Parse("00000000-0000-0000-0000-000000000001");
-        var largerId = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var smallerId = TestIds.From(0x01);
+        var largerId = TestIds.From(0x02);
 
         // Side with the smaller PeerId keeps the connection it initiated (outbound).
         var managerSmaller = new SessionManager(
             new NetworkOptions(), new StubIdentityStore(smallerId, "a"), new FakeDiscoveryService());
-        var smallerOutbound = new FakeSession(new PeerId(largerId));
-        var smallerInbound = new FakeSession(new PeerId(largerId));
+        var smallerOutbound = new FakeSession(largerId);
+        var smallerInbound = new FakeSession(largerId);
 
         await managerSmaller.RegisterSessionAsync(smallerOutbound, isOutbound: true);
         await managerSmaller.RegisterSessionAsync(smallerInbound, isOutbound: false);
 
-        Assert.Same(smallerOutbound, managerSmaller.Sessions[new PeerId(largerId)]);
+        Assert.Same(smallerOutbound, managerSmaller.Sessions[largerId]);
         Assert.True(smallerInbound.Disposed);
         Assert.False(smallerOutbound.Disposed);
 
         // Side with the larger PeerId keeps the connection it accepted (inbound).
         var managerLarger = new SessionManager(
             new NetworkOptions(), new StubIdentityStore(largerId, "b"), new FakeDiscoveryService());
-        var largerOutbound = new FakeSession(new PeerId(smallerId));
-        var largerInbound = new FakeSession(new PeerId(smallerId));
+        var largerOutbound = new FakeSession(smallerId);
+        var largerInbound = new FakeSession(smallerId);
 
         await managerLarger.RegisterSessionAsync(largerOutbound, isOutbound: true);
         await managerLarger.RegisterSessionAsync(largerInbound, isOutbound: false);
 
-        Assert.Same(largerInbound, managerLarger.Sessions[new PeerId(smallerId)]);
+        Assert.Same(largerInbound, managerLarger.Sessions[smallerId]);
         Assert.True(largerOutbound.Disposed);
         Assert.False(largerInbound.Disposed);
     }

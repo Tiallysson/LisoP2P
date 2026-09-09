@@ -55,8 +55,8 @@ public class NicknameRulesTests
     [Fact]
     public void FallbackFor_DerivesFromIdOnly()
     {
-        var id = new PeerId(Guid.Parse("abcd1234-0000-0000-0000-000000000000"));
+        var id = TestIds.From(0xAB);
 
-        Assert.Equal("user-abcd", NicknameRules.FallbackFor(id));
+        Assert.Equal("user-abab", NicknameRules.FallbackFor(id));
     }
 }

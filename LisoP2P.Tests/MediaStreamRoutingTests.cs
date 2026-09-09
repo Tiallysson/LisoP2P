@@ -9,9 +9,9 @@ namespace LisoP2P.Tests;
 
 public class MediaStreamRoutingTests
 {
-    private static readonly Guid SelfId = Guid.Parse("00000000-0000-0000-0000-0000000000ff");
-    private static readonly Guid PeerAId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
-    private static readonly Guid PeerBId = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002");
+    private static readonly PeerId SelfId = TestIds.From(0xFF);
+    private static readonly PeerId PeerAId = TestIds.From(0xA1);
+    private static readonly PeerId PeerBId = TestIds.From(0xB2);
 
     private static UdpMediaReceiver NewReceiver() =>
         new(new StubIdentityStore(SelfId, "self"));
@@ -25,7 +25,7 @@ public class MediaStreamRoutingTests
     private static byte[] Packet(byte streamId, uint frameId, byte[] payload, bool keyframe = false) =>
         Packet(PeerAId, streamId, frameId, payload, keyframe);
 
-    private static byte[] Packet(Guid sender, byte streamId, uint frameId, byte[] payload, bool keyframe = false)
+    private static byte[] Packet(PeerId sender, byte streamId, uint frameId, byte[] payload, bool keyframe = false)
     {
         var buffer = new byte[MediaPacketCodec.HeaderSize + payload.Length];
 
@@ -165,8 +165,8 @@ public class MediaStreamRoutingTests
 
         Assert.True(await WaitForAsync(() => frames.Count == 2));
 
-        var fromA = Assert.Single(frames, entry => entry.Sender.Value == PeerAId);
-        var fromB = Assert.Single(frames, entry => entry.Sender.Value == PeerBId);
+        var fromA = Assert.Single(frames, entry => entry.Sender == PeerAId);
+        var fromB = Assert.Single(frames, entry => entry.Sender == PeerBId);
 
         Assert.Equal([1, 1, 1, 1], fromA.Frame.Data);
         Assert.Equal([2, 2, 2, 2], fromB.Frame.Data);
@@ -198,7 +198,7 @@ public class MediaStreamRoutingTests
     private static void Send(UdpClient socket, IPEndPoint destination, byte[] packet) =>
         socket.Send(packet, packet.Length, destination);
 
-    private static byte[] Fragment(Guid sender, uint frameId, ushort index, ushort count, byte[] payload)
+    private static byte[] Fragment(PeerId sender, uint frameId, ushort index, ushort count, byte[] payload)
     {
         var buffer = new byte[MediaPacketCodec.HeaderSize + payload.Length];
 
