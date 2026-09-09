@@ -1,3 +1,4 @@
+using LisoP2P.Core;
 using System.Runtime.Versioning;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;

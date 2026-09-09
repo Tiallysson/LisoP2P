@@ -1,3 +1,4 @@
+using LisoP2P.Core;
 namespace LisoP2P.Media;
 
 public sealed record AudioSettings

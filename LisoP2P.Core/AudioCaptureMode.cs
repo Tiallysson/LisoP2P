@@ -1,4 +1,4 @@
-namespace LisoP2P.Media;
+namespace LisoP2P.Core;
 
 public enum AudioCaptureMode
 {
