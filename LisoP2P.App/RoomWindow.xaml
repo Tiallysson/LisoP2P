@@ -12,16 +12,41 @@
         <conv:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter" />
         <conv:EmptyToVisibilityConverter x:Key="EmptyToVisibilityConverter" />
         <conv:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+        <conv:SeverityToBrushConverter x:Key="SeverityToBrushConverter" />
     </Window.Resources>
 
-    <Grid DataContext="{Binding ActiveRoom}" Margin="10">
+    <Grid Margin="10">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+        <ItemsControl x:Name="Notifications" Grid.Row="0" Margin="0,0,0,6">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border CornerRadius="4" Padding="10,7" Margin="0,0,0,4"
+                            Background="{Binding Severity, Converter={StaticResource SeverityToBrushConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="{Binding Message}" Foreground="White"
+                                       FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                            <Button Grid.Column="1" Content="{Binding ActionLabel}" Command="{Binding Action}"
+                                    Padding="10,3" Margin="10,0,0,0" FontSize="11"
+                                    Visibility="{Binding HasAction, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel Grid.Row="1" DataContext="{Binding ActiveRoom}" Orientation="Horizontal" Margin="0,0,0,8">
             <TextBlock Text="{Binding RoomName}" Foreground="White" FontSize="16" FontWeight="SemiBold" />
             <TextBlock Text="{Binding MemberCountText}" Foreground="Gray" FontSize="12"
                        Margin="10,4,0,0" VerticalAlignment="Center" />
@@ -30,7 +55,7 @@
                        Visibility="{Binding PresenterText, Converter={StaticResource EmptyToVisibilityConverter}}" />
         </StackPanel>
 
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="2" DataContext="{Binding ActiveRoom}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="210" />
                 <ColumnDefinition Width="*" />
@@ -45,13 +70,18 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal" Margin="2,4">
-                                <Ellipse Width="10" Height="10" VerticalAlignment="Center" Margin="0,0,8,0">
+                                <Ellipse Width="10" Height="10" VerticalAlignment="Center" Margin="0,0,8,0"
+                                         ToolTip="{Binding MicrophoneTooltip}">
                                     <Ellipse.Style>
                                         <Style TargetType="Ellipse">
                                             <Setter Property="Fill" Value="#FF3A3A3A" />
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSpeaking}" Value="True">
                                                     <Setter Property="Fill" Value="#FF98C379" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                                                    <Setter Property="Fill" Value="#FF2A2A2A" />
+                                                    <Setter Property="Opacity" Value="0.5" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -77,6 +107,14 @@
             <!-- Video -->
             <Grid Grid.Column="1" Background="Black" Margin="0,0,8,0">
                 <Image Source="{Binding RemoteVideo}" Stretch="Uniform" />
+
+                <Border Background="#CC000000" Padding="18,10" CornerRadius="6"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Visibility="{Binding VideoOverlayText, Converter={StaticResource EmptyToVisibilityConverter}}">
+                    <TextBlock Text="{Binding VideoOverlayText}" Foreground="#FFE06C75"
+                               FontSize="14" TextWrapping="Wrap" />
+                </Border>
+
                 <TextBlock Text="Ninguém está compartilhando a tela"
                            Foreground="#FF5A5A5A" FontSize="13"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -126,12 +164,8 @@
         </Grid>
 
         <!-- Controls -->
-        <StackPanel Grid.Row="2" Margin="0,8,0,0">
+        <StackPanel Grid.Row="3" DataContext="{Binding ActiveRoom}" Margin="0,8,0,0">
             <StackPanel Orientation="Horizontal">
-                <ComboBox ItemsSource="{Binding Monitors}" SelectedItem="{Binding SelectedMonitor, Mode=TwoWay}"
-                          DisplayMemberPath="Description" Width="200" Margin="0,0,8,0"
-                          Visibility="{Binding HasMultipleMonitors, Converter={StaticResource BoolToVisibilityConverter}}" />
-
                 <Button Content="Compartilhar tela" Command="{Binding ShareScreenCommand}"
                         IsEnabled="{Binding CanShare}" Padding="10,4" Margin="0,0,6,0"
                         ToolTip="{Binding ShareBlockedReason}"
@@ -145,9 +179,8 @@
                            VerticalAlignment="Center" Margin="4,0,12,0"
                            Visibility="{Binding ShareBlockedReason, Converter={StaticResource EmptyToVisibilityConverter}}" />
 
-                <TextBlock Text="Falar:" Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="8,0,4,0" />
-                <ComboBox ItemsSource="{Binding PushToTalkOptions}" SelectedItem="{Binding PushToTalk, Mode=TwoWay}"
-                          DisplayMemberPath="Label" Width="90" Margin="0,0,8,0" />
+                <TextBlock Text="{Binding PushToTalkHint}" Foreground="Gray" FontSize="11"
+                           VerticalAlignment="Center" Margin="8,0,8,0" />
 
                 <Ellipse Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,6,0">
                     <Ellipse.Style>
@@ -166,14 +199,8 @@
                           Foreground="Gray" VerticalAlignment="Center" Margin="8,0,0,0" />
             </StackPanel>
 
-            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                <TextBlock Text="Entrada:" Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0" />
-                <ComboBox ItemsSource="{Binding InputDevices}" SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}"
-                          DisplayMemberPath="Name" Width="200" Margin="0,0,10,0" />
-                <TextBlock Text="Saída:" Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0" />
-                <ComboBox ItemsSource="{Binding OutputDevices}" SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
-                          DisplayMemberPath="Name" Width="200" />
-            </StackPanel>
+            <TextBlock Text="Monitor, resolução e dispositivos de áudio ficam em Configurações."
+                       Foreground="#FF6C7480" FontSize="11" Margin="0,6,0,0" />
 
             <TextBlock Text="{Binding VideoStatsText}" Foreground="Gray" FontSize="10" Margin="0,6,0,0"
                        Visibility="{Binding VideoStatsText, Converter={StaticResource EmptyToVisibilityConverter}}" />

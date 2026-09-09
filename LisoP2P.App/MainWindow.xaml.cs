@@ -1,4 +1,3 @@
-﻿using LisoP2P.App.ViewModels;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -8,35 +7,61 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using LisoP2P.App.Services;
+using LisoP2P.App.ViewModels;
 
 namespace LisoP2P.App;
 
 public partial class MainWindow : Window
 {
-    private readonly MainViewModel _viewModel;
-    private readonly Func<CaptureTestWindow> _captureWindowFactory;
-    private readonly Func<RoomWindow> _roomWindowFactory;
+    private readonly IAppShell _shell;
+    private MainViewModel _viewModel;
     private ChatViewModel? _boundChat;
     private CaptureTestWindow? _captureWindow;
     private RoomWindow? _roomWindow;
+    private SettingsWindow? _settingsWindow;
     private bool _userScrolledUp;
     private bool _pushToTalkHeld;
 
-    public MainWindow(
-        MainViewModel viewModel,
-        Func<CaptureTestWindow> captureWindowFactory,
-        Func<RoomWindow> roomWindowFactory)
+    public MainWindow(IAppShell shell)
     {
         InitializeComponent();
-        DataContext = viewModel;
-        _viewModel = viewModel;
-        _captureWindowFactory = captureWindowFactory;
-        _roomWindowFactory = roomWindowFactory;
-        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+
+        _shell = shell;
+        _viewModel = shell.MainViewModel;
+
+        Bind();
+        Notifications.ItemsSource = shell.Notifications.Notifications;
+
+        // A port change replaces the whole network stack, and the view model with it.
+        shell.Rebuilt += OnShellRebuilt;
 
         PreviewKeyDown += OnPushToTalkKeyDown;
         PreviewKeyUp += OnPushToTalkKeyUp;
         Deactivated += (_, _) => ReleasePushToTalk();
+    }
+
+    private void Bind()
+    {
+        DataContext = _viewModel;
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnShellRebuilt()
+    {
+        _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+
+        if (_boundChat is not null)
+        {
+            _boundChat.Messages.CollectionChanged -= OnMessagesChanged;
+            _boundChat = null;
+        }
+
+        // The room window belongs to the old stack; a stale one would bind to disposed sessions.
+        _roomWindow?.Close();
+
+        _viewModel = _shell.MainViewModel;
+        Bind();
     }
 
     private void OnPushToTalkKeyDown(object sender, KeyEventArgs e)
@@ -73,28 +98,21 @@ public partial class MainWindow : Window
 
     private bool MatchesPushToTalk(KeyEventArgs e)
     {
-        var chat = _viewModel.ActiveChat;
-
-        if (chat is null)
+        if (_viewModel.ActiveChat is null)
         {
             return false;
         }
 
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        var expected = chat.PushToTalk.Key;
+        var expected = _viewModel.PushToTalkKey;
 
+        // Space is also a character: typing a message must not open the microphone.
         if (expected == Key.Space && Keyboard.FocusedElement is TextBoxBase)
         {
             return false;
         }
 
-        return key == expected || (expected, key) switch
-        {
-            (Key.LeftCtrl, Key.RightCtrl) => true,
-            (Key.LeftAlt, Key.RightAlt) => true,
-            (Key.LeftShift, Key.RightShift) => true,
-            _ => false,
-        };
+        return PushToTalkKeys.Matches(expected, key);
     }
 
     private void OpenCaptureTest_Click(object sender, RoutedEventArgs e)
@@ -105,7 +123,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        _captureWindow = _captureWindowFactory();
+        _captureWindow = _shell.CreateCaptureTestWindow();
         _captureWindow.Owner = this;
         _captureWindow.Closed += (_, _) => _captureWindow = null;
         _captureWindow.Show();
@@ -119,10 +137,24 @@ public partial class MainWindow : Window
             return;
         }
 
-        _roomWindow = _roomWindowFactory();
+        _roomWindow = _shell.CreateRoomWindow();
         _roomWindow.Owner = this;
         _roomWindow.Closed += (_, _) => _roomWindow = null;
         _roomWindow.Show();
+    }
+
+    private void OpenSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_settingsWindow is not null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = _shell.CreateSettingsWindow();
+        _settingsWindow.Owner = this;
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.ShowDialog();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

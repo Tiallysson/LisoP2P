@@ -1,13 +1,14 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LisoP2P.App.Services;
 using LisoP2P.Core;
 using LisoP2P.Core.Protocol;
+using LisoP2P.Core.Settings;
 using LisoP2P.Media;
 using LisoP2P.Net;
 using LisoP2P.Storage;
@@ -22,21 +23,16 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
     private readonly IIdentityStore _identity;
     private readonly IScreenShareSession _screenShare;
     private readonly IVoiceSession _voice;
-    private readonly IAudioDeviceCatalog _audioDevices;
-    private readonly ICapturePipeline _pipeline;
+    private readonly IAppSettingsStore _settings;
+    private readonly IErrorPresenter _errors;
 
     private WriteableBitmap? _remoteBitmap;
     private int _remoteFramePending;
     private int _voiceStarting;
+    private bool _encoderUnavailable;
 
     public ObservableCollection<RoomMemberViewModel> Members { get; } = [];
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
-    public IReadOnlyList<CaptureAdapterInfo> Monitors => _pipeline.AvailableMonitors;
-    public bool HasMultipleMonitors => Monitors.Count > 1;
-    public IReadOnlyList<AudioDeviceInfo> InputDevices { get; }
-    public IReadOnlyList<AudioDeviceInfo> OutputDevices { get; }
-
-    public static IReadOnlyList<PushToTalkOption> PushToTalkOptions => ChatViewModel.PushToTalkOptions;
 
     [ObservableProperty]
     private string _roomName = "";
@@ -46,9 +42,6 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _memberCountText = "";
-
-    [ObservableProperty]
-    private CaptureAdapterInfo? _selectedMonitor;
 
     [ObservableProperty]
     private bool _canShare;
@@ -68,6 +61,10 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private ImageSource? _remoteVideo;
 
+    /// <summary>Explains a frozen picture instead of leaving the last frame there unlabelled.</summary>
+    [ObservableProperty]
+    private string _videoOverlayText = "";
+
     [ObservableProperty]
     private bool _debugMode;
 
@@ -81,13 +78,7 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
     private bool _isTransmittingVoice;
 
     [ObservableProperty]
-    private AudioDeviceInfo? _selectedInputDevice;
-
-    [ObservableProperty]
-    private AudioDeviceInfo? _selectedOutputDevice;
-
-    [ObservableProperty]
-    private PushToTalkOption _pushToTalk = ChatViewModel.PushToTalkOptions[0];
+    private string _pushToTalkHint = "";
 
     public RoomViewModel(
         IRoomService rooms,
@@ -96,8 +87,8 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
         IIdentityStore identity,
         IScreenShareSession screenShare,
         IVoiceSession voice,
-        IAudioDeviceCatalog audioDevices,
-        ICapturePipeline pipeline)
+        IAppSettingsStore settings,
+        IErrorPresenter errors)
     {
         _rooms = rooms;
         _router = router;
@@ -105,14 +96,8 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
         _identity = identity;
         _screenShare = screenShare;
         _voice = voice;
-        _audioDevices = audioDevices;
-        _pipeline = pipeline;
-        _selectedMonitor = _pipeline.AvailableMonitors.FirstOrDefault();
-
-        InputDevices = _audioDevices.GetInputDevices();
-        OutputDevices = _audioDevices.GetOutputDevices();
-        _selectedInputDevice = InputDevices.FirstOrDefault(device => device.IsDefault) ?? InputDevices.FirstOrDefault();
-        _selectedOutputDevice = OutputDevices.FirstOrDefault(device => device.IsDefault) ?? OutputDevices.FirstOrDefault();
+        _settings = settings;
+        _errors = errors;
 
         _rooms.MembersChanged += OnMembersChanged;
         _router.MessageReceived += OnRoomMessageReceived;
@@ -121,7 +106,9 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
         _screenShare.StatsUpdated += OnScreenShareStatsUpdated;
         _voice.StateChanged += OnVoiceStateChanged;
         _voice.StatsUpdated += OnVoiceStatsUpdated;
+        _settings.Changed += OnSettingsChanged;
 
+        RefreshPushToTalkHint();
         RefreshMembers();
     }
 
@@ -156,6 +143,12 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
 
         return peer == _identity.Id ? _identity.Nickname : NicknameRules.FallbackFor(peer);
     }
+
+    private void OnSettingsChanged(AppSettings settings) =>
+        Application.Current.Dispatcher.Invoke(RefreshPushToTalkHint);
+
+    private void RefreshPushToTalkHint() =>
+        PushToTalkHint = $"Segure {PushToTalkKeys.Describe(PushToTalkKeys.Parse(_settings.Current.PushToTalkKey))} para falar";
 
     private void OnMembersChanged() => Application.Current.Dispatcher.Invoke(RefreshMembers);
 
@@ -220,7 +213,7 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
             }
             catch (Exception ex)
             {
-                Application.Current.Dispatcher.Invoke(() => VoiceStatsText = ex.Message);
+                _errors.ShowTransient($"Voz indisponível: {ex.Message}", ErrorSeverity.Warning);
             }
             finally
             {
@@ -229,11 +222,17 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
         }
     }
 
-    private AudioSettings BuildAudioSettings() => new()
+    private AudioSettings BuildAudioSettings()
     {
-        InputDeviceId = SelectedInputDevice?.Id,
-        OutputDeviceId = SelectedOutputDevice?.Id,
-    };
+        var settings = _settings.Current;
+
+        return new AudioSettings
+        {
+            Mode = settings.AudioMode,
+            InputDeviceId = settings.AudioInputDeviceId,
+            OutputDeviceId = settings.AudioOutputDeviceId,
+        };
+    }
 
     [RelayCommand]
     private async Task SendAsync()
@@ -303,25 +302,45 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ShareScreenAsync()
     {
-        var monitor = SelectedMonitor ?? Monitors.FirstOrDefault();
-
-        if (monitor is null)
-        {
-            return;
-        }
-
         try
         {
+            var settings = _settings.Current;
+
             await _screenShare.StartSharingAsync(
                 _rooms.RemoteMemberIds,
-                monitor.Index,
-                new CaptureSettings(),
+                settings.PreferredMonitorIndex,
+                CaptureSettingsFactory.From(settings),
                 CancellationToken.None);
         }
         catch (Exception ex)
         {
-            Application.Current.Dispatcher.Invoke(() => VideoStatsText = ex.Message);
+            ReportShareFailure(ex);
         }
+    }
+
+    private void ReportShareFailure(Exception error)
+    {
+        if (error.Message.Contains("encoder", StringComparison.OrdinalIgnoreCase))
+        {
+            _encoderUnavailable = true;
+
+            _errors.ShowPersistent(
+                NotificationKey.EncoderUnavailable,
+                $"Nenhum encoder H.264 utilizável nesta máquina. Compartilhar tela ficará indisponível. {error.Message}",
+                "Dispensar",
+                () => _errors.Dismiss(NotificationKey.EncoderUnavailable));
+        }
+        else
+        {
+            _errors.ShowPersistent(
+                NotificationKey.CaptureUnavailable,
+                $"Não foi possível iniciar a captura de tela: {error.Message} " +
+                "Verifique se há atualização do driver de vídeo disponível.",
+                "Dispensar",
+                () => _errors.Dismiss(NotificationKey.CaptureUnavailable));
+        }
+
+        Application.Current.Dispatcher.Invoke(RefreshShareState);
     }
 
     [RelayCommand]
@@ -383,20 +402,31 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
         // One presenter at a time is a product decision for this phase - the mesh does not carry N
         // simultaneous video streams well - not a limit of the protocol.
         var someoneElseSharing = IsWatching && !IsSharing;
+        var hasConnectedPeer = _rooms.Members.Any(m => !m.IsSelf && m.ConnectionState == SessionState.Connected);
 
-        CanShare = !IsSharing
-            && !someoneElseSharing
-            && _rooms.Members.Any(m => !m.IsSelf && m.ConnectionState == SessionState.Connected);
+        CanShare = !IsSharing && !someoneElseSharing && hasConnectedPeer && !_encoderUnavailable;
 
-        ShareBlockedReason = someoneElseSharing
-            ? $"{NameOf(_screenShare.WatchingFrom!)} já está compartilhando a tela."
-            : "";
+        ShareBlockedReason = _encoderUnavailable
+            ? "Nenhum encoder H.264 disponível nesta máquina."
+            : someoneElseSharing
+                ? $"{NameOf(_screenShare.WatchingFrom!)} já está compartilhando a tela."
+                : hasConnectedPeer
+                    ? ""
+                    : "Nenhum membro conectado para receber a tela.";
 
         if (!IsWatching)
         {
             RemoteVideo = null;
             _remoteBitmap = null;
+            VideoOverlayText = "";
+            return;
         }
+
+        var presenterMember = _rooms.Members.FirstOrDefault(m => m.Id == _screenShare.WatchingFrom);
+
+        VideoOverlayText = presenterMember is not null && presenterMember.ConnectionState != SessionState.Connected
+            ? $"Conexão perdida com {presenterMember.Nickname}"
+            : "";
     }
 
     private void OnScreenShareStatsUpdated(ScreenShareStats stats)
@@ -447,13 +477,6 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
         }
     }
 
-    partial void OnSelectedInputDeviceChanged(AudioDeviceInfo? value) => ApplyAudioDevices();
-
-    partial void OnSelectedOutputDeviceChanged(AudioDeviceInfo? value) => ApplyAudioDevices();
-
-    private void ApplyAudioDevices() =>
-        _voice.UpdateDevices(SelectedInputDevice?.Id, SelectedOutputDevice?.Id, AudioCaptureMode.Microphone);
-
     public void Dispose()
     {
         _rooms.MembersChanged -= OnMembersChanged;
@@ -463,5 +486,6 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
         _screenShare.StatsUpdated -= OnScreenShareStatsUpdated;
         _voice.StateChanged -= OnVoiceStateChanged;
         _voice.StatsUpdated -= OnVoiceStatsUpdated;
+        _settings.Changed -= OnSettingsChanged;
     }
 }

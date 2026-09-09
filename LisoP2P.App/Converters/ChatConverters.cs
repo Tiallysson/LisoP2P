@@ -1,6 +1,9 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
+using LisoP2P.App.Services;
+using LisoP2P.Net;
 
 namespace LisoP2P.App.Converters;
 
@@ -73,4 +76,58 @@ public sealed class EmptyToVisibilityConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
+}
+
+/// <summary>
+/// The session state as a colour. "Reconectando" and "Desconectado" have to differ by more than
+/// the wording, which is the whole point of this converter existing.
+/// </summary>
+public sealed class SessionStateToBrushConverter : IValueConverter
+{
+    private static readonly SolidColorBrush Connected = Freeze("#FF98C379");
+    private static readonly SolidColorBrush Working = Freeze("#FFE5C07B");
+    private static readonly SolidColorBrush Closed = Freeze("#FFE06C75");
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value switch
+        {
+            SessionState.Connected => Connected,
+            SessionState.Connecting or SessionState.Handshaking or SessionState.Reconnecting => Working,
+            _ => Closed,
+        };
+
+    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+
+    private static SolidColorBrush Freeze(string hex)
+    {
+        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        brush.Freeze();
+        return brush;
+    }
+}
+
+public sealed class SeverityToBrushConverter : IValueConverter
+{
+    private static readonly SolidColorBrush Info = Freeze("#FF2F3B47");
+    private static readonly SolidColorBrush Warning = Freeze("#FF3E3520");
+    private static readonly SolidColorBrush Error = Freeze("#FF43262A");
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value switch
+        {
+            ErrorSeverity.Warning => Warning,
+            ErrorSeverity.Error => Error,
+            _ => Info,
+        };
+
+    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+
+    private static SolidColorBrush Freeze(string hex)
+    {
+        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        brush.Freeze();
+        return brush;
+    }
 }

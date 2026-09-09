@@ -1,16 +1,18 @@
 using System.Collections.ObjectModel;
 using System.Net;
 using System.Windows;
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LisoP2P.App.Services;
 using LisoP2P.Core;
-using LisoP2P.Media;
+using LisoP2P.Core.Settings;
 using LisoP2P.Net;
 using LisoP2P.Storage;
 
 namespace LisoP2P.App.ViewModels;
 
-public sealed partial class MainViewModel : ObservableObject
+public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly IIdentityStore _identity;
     private readonly IDiscoveryService _discovery;
@@ -21,12 +23,19 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IVoiceSession _voice;
     private readonly IRoomService _rooms;
     private readonly IRoomChatRouter _router;
-    private readonly IAudioDeviceCatalog _audioDevices;
-    private readonly ICapturePipeline _pipeline;
+    private readonly IAppSettingsStore _settings;
+    private readonly IErrorPresenter _errors;
     private readonly NetworkOptions _options;
 
     public string ShortId => _identity.Id.ToString();
+    public string Fingerprint => _identity.Fingerprint;
     public ObservableCollection<PeerViewModel> Peers { get; } = [];
+
+    /// <summary>Peers already announced this run, so a reconnect does not re-toast the same id.</summary>
+    private readonly HashSet<PeerId> _announcedFingerprints = [];
+
+    /// <summary>The key both windows watch for push-to-talk, as chosen in Configurações → Áudio.</summary>
+    public Key PushToTalkKey => PushToTalkKeys.Parse(_settings.Current.PushToTalkKey);
 
     [ObservableProperty]
     private string _nickname;
@@ -65,8 +74,8 @@ public sealed partial class MainViewModel : ObservableObject
         IVoiceSession voice,
         IRoomService rooms,
         IRoomChatRouter router,
-        IAudioDeviceCatalog audioDevices,
-        ICapturePipeline pipeline,
+        IAppSettingsStore settings,
+        IErrorPresenter errors,
         NetworkOptions options)
     {
         _identity = identity;
@@ -78,8 +87,8 @@ public sealed partial class MainViewModel : ObservableObject
         _voice = voice;
         _rooms = rooms;
         _router = router;
-        _audioDevices = audioDevices;
-        _pipeline = pipeline;
+        _settings = settings;
+        _errors = errors;
         _options = options;
         _nickname = identity.Nickname;
 
@@ -88,6 +97,9 @@ public sealed partial class MainViewModel : ObservableObject
         _discovery.PeerUpdated += OnPeerUpdated;
         _discovery.PeerLost += OnPeerLost;
         _rooms.MembersChanged += OnRoomMembersChanged;
+        _rooms.Log += OnRoomLog;
+        _sessionManager.SessionOpened += OnSessionOpened;
+        _settings.Changed += OnSettingsChanged;
 
         UpdateStatusText();
     }
@@ -95,6 +107,28 @@ public sealed partial class MainViewModel : ObservableObject
     private void OnIdentityNicknameChanged(string nickname)
     {
         Application.Current.Dispatcher.Invoke(() => Nickname = nickname);
+    }
+
+    private void OnSettingsChanged(AppSettings settings) =>
+        Application.Current.Dispatcher.Invoke(() => OnPropertyChanged(nameof(PushToTalkKey)));
+
+    private void OnRoomLog(string message) => _errors.ShowTransient(message, ErrorSeverity.Info);
+
+    /// <summary>
+    /// Verification by transparency: the peer's fingerprint is shown once, without blocking the
+    /// connection. The user can read it out loud on a call and compare — refusing to connect until
+    /// someone confirms is a bigger security story than this phase covers.
+    /// </summary>
+    private void OnSessionOpened(IPeerSession session)
+    {
+        if (!_announcedFingerprints.Add(session.RemoteId))
+        {
+            return;
+        }
+
+        _errors.ShowTransient(
+            $"Conectado com {session.RemoteNickname} — fingerprint {PeerFingerprint.Short(session.RemoteId)}",
+            ErrorSeverity.Info);
     }
 
     [RelayCommand]
@@ -110,6 +144,10 @@ public sealed partial class MainViewModel : ObservableObject
         _identity.SetNickname(Nickname);
         Nickname = _identity.Nickname;
         NicknameError = "";
+
+        var settings = _settings.Current;
+        settings.Nickname = _identity.Nickname;
+        _settings.Save(settings);
     }
 
     partial void OnSelectedPeerChanged(PeerViewModel? value)
@@ -129,11 +167,12 @@ public sealed partial class MainViewModel : ObservableObject
             peerVm.Nickname,
             _chatStore,
             _sessionManager,
+            _discovery,
             _identity,
             _screenShare,
             _voice,
-            _audioDevices,
-            _pipeline);
+            _settings,
+            _errors);
         ActiveChat = chat;
 
         await chat.LoadHistoryAsync().ConfigureAwait(false);
@@ -204,8 +243,8 @@ public sealed partial class MainViewModel : ObservableObject
                     _identity,
                     _screenShare,
                     _voice,
-                    _audioDevices,
-                    _pipeline);
+                    _settings,
+                    _errors);
 
                 ActiveRoom = room;
                 _ = room.LoadHistoryAsync();
@@ -243,6 +282,7 @@ public sealed partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             RoomStatusText = ex.Message;
+            _errors.ShowTransient($"Não foi possível convidar: {ex.Message}", ErrorSeverity.Warning);
         }
     }
 
@@ -256,9 +296,35 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ConnectManually()
     {
-        if (IPAddress.TryParse(ManualConnectAddress, out var address))
+        if (!IPAddress.TryParse(ManualConnectAddress, out var address))
+        {
+            _errors.ShowTransient("Endereço inválido.", ErrorSeverity.Warning);
+            return;
+        }
+
+        try
         {
             _connector.Connect(address);
+            _errors.ShowTransient($"Convite de descoberta enviado para {address}.", ErrorSeverity.Info);
         }
+        catch (Exception ex)
+        {
+            _errors.ShowTransient($"Falha ao contatar {address}: {ex.Message}", ErrorSeverity.Warning);
+        }
+    }
+
+    public void Dispose()
+    {
+        _identity.NicknameChanged -= OnIdentityNicknameChanged;
+        _discovery.PeerAppeared -= OnPeerAppeared;
+        _discovery.PeerUpdated -= OnPeerUpdated;
+        _discovery.PeerLost -= OnPeerLost;
+        _rooms.MembersChanged -= OnRoomMembersChanged;
+        _rooms.Log -= OnRoomLog;
+        _sessionManager.SessionOpened -= OnSessionOpened;
+        _settings.Changed -= OnSettingsChanged;
+
+        ActiveChat?.Dispose();
+        ActiveRoom?.Dispose();
     }
 }

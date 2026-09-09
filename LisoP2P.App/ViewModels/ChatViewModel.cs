@@ -1,14 +1,15 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LisoP2P.App.Services;
 using LisoP2P.Core;
 using LisoP2P.Core.Protocol;
+using LisoP2P.Core.Settings;
 using LisoP2P.Media;
 using LisoP2P.Net;
 using LisoP2P.Storage;
@@ -20,37 +21,20 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     private readonly PeerId _peerId;
     private readonly IChatStore _chatStore;
     private readonly ISessionManager _sessionManager;
+    private readonly IDiscoveryService _discovery;
     private readonly IIdentityStore _identity;
     private readonly IScreenShareSession _screenShare;
     private readonly IVoiceSession _voice;
-    private readonly IAudioDeviceCatalog _audioDevices;
-    private readonly ICapturePipeline _pipeline;
+    private readonly IAppSettingsStore _settings;
+    private readonly IErrorPresenter _errors;
     private readonly DispatcherTimer _headerTimer;
     private IPeerSession? _session;
     private WriteableBitmap? _remoteBitmap;
     private int _remoteFramePending;
+    private bool _retrying;
 
     public PeerId PeerId => _peerId;
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
-    public IReadOnlyList<CaptureAdapterInfo> Monitors => _pipeline.AvailableMonitors;
-    public bool HasMultipleMonitors => Monitors.Count > 1;
-    public IReadOnlyList<AudioDeviceInfo> InputDevices { get; }
-    public IReadOnlyList<AudioDeviceInfo> OutputDevices { get; }
-
-    public static IReadOnlyList<AudioCaptureMode> CaptureModes { get; } =
-    [
-        AudioCaptureMode.Microphone,
-        AudioCaptureMode.SystemLoopback,
-        AudioCaptureMode.Both,
-    ];
-
-    public static IReadOnlyList<PushToTalkOption> PushToTalkOptions { get; } =
-    [
-        new PushToTalkOption("Ctrl", Key.LeftCtrl),
-        new PushToTalkOption("Alt", Key.LeftAlt),
-        new PushToTalkOption("Shift", Key.LeftShift),
-        new PushToTalkOption("Espaço", Key.Space),
-    ];
 
     [ObservableProperty]
     private string _peerNickname;
@@ -61,11 +45,22 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _headerText = "Desconectado";
 
+    /// <summary>
+    /// Drives the colour and icon of the header dot. "Reconectando" and "Desconectado" have to be
+    /// distinguishable at a glance, not only by reading the label.
+    /// </summary>
     [ObservableProperty]
-    private CaptureAdapterInfo? _selectedMonitor;
+    private SessionState _connectionState = SessionState.Closed;
+
+    /// <summary>True once reconnection gave up, which is when the manual retry appears.</summary>
+    [ObservableProperty]
+    private bool _canRetryConnection;
 
     [ObservableProperty]
     private bool _canShare;
+
+    [ObservableProperty]
+    private string _shareBlockedReason = "";
 
     [ObservableProperty]
     private bool _isSharing;
@@ -75,6 +70,10 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private ImageSource? _remoteVideo;
+
+    /// <summary>Non-empty while the peer's screen is on display but the session is gone.</summary>
+    [ObservableProperty]
+    private string _videoOverlayText = "";
 
     [ObservableProperty]
     private bool _debugMode;
@@ -92,19 +91,10 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     private bool _isPeerSpeaking;
 
     [ObservableProperty]
+    private bool _isPeerReachable = true;
+
+    [ObservableProperty]
     private bool _openMicrophone;
-
-    [ObservableProperty]
-    private AudioCaptureMode _captureMode = AudioCaptureMode.Microphone;
-
-    [ObservableProperty]
-    private AudioDeviceInfo? _selectedInputDevice;
-
-    [ObservableProperty]
-    private AudioDeviceInfo? _selectedOutputDevice;
-
-    [ObservableProperty]
-    private PushToTalkOption _pushToTalk = PushToTalkOptions[0];
 
     [ObservableProperty]
     private string _voiceStatsText = "";
@@ -114,27 +104,24 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         string nickname,
         IChatStore chatStore,
         ISessionManager sessionManager,
+        IDiscoveryService discovery,
         IIdentityStore identity,
         IScreenShareSession screenShare,
         IVoiceSession voice,
-        IAudioDeviceCatalog audioDevices,
-        ICapturePipeline pipeline)
+        IAppSettingsStore settings,
+        IErrorPresenter errors)
     {
         _peerId = peerId;
         _peerNickname = nickname;
         _chatStore = chatStore;
         _sessionManager = sessionManager;
+        _discovery = discovery;
         _identity = identity;
         _screenShare = screenShare;
         _voice = voice;
-        _audioDevices = audioDevices;
-        _pipeline = pipeline;
-        _selectedMonitor = _pipeline.AvailableMonitors.FirstOrDefault();
-
-        InputDevices = _audioDevices.GetInputDevices();
-        OutputDevices = _audioDevices.GetOutputDevices();
-        _selectedInputDevice = InputDevices.FirstOrDefault(device => device.IsDefault) ?? InputDevices.FirstOrDefault();
-        _selectedOutputDevice = OutputDevices.FirstOrDefault(device => device.IsDefault) ?? OutputDevices.FirstOrDefault();
+        _settings = settings;
+        _errors = errors;
+        _openMicrophone = !settings.Current.PushToTalkEnabled;
 
         _screenShare.RemoteFrameReady += OnRemoteFrameReady;
         _screenShare.StateChanged += OnScreenShareStateChanged;
@@ -169,7 +156,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            Application.Current.Dispatcher.Invoke(() => VoiceStatsText = ex.Message);
+            _errors.ShowTransient($"Não foi possível iniciar a voz: {ex.Message}", ErrorSeverity.Warning);
         }
     }
 
@@ -183,12 +170,17 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _voice.SetTransmitting(pressed);
     }
 
-    private AudioSettings BuildAudioSettings() => new()
+    private AudioSettings BuildAudioSettings()
     {
-        Mode = CaptureMode,
-        InputDeviceId = SelectedInputDevice?.Id,
-        OutputDeviceId = SelectedOutputDevice?.Id,
-    };
+        var settings = _settings.Current;
+
+        return new AudioSettings
+        {
+            Mode = settings.AudioMode,
+            InputDeviceId = settings.AudioInputDeviceId,
+            OutputDeviceId = settings.AudioOutputDeviceId,
+        };
+    }
 
     private void OnVoiceStateChanged() => Application.Current.Dispatcher.Invoke(RefreshVoiceState);
 
@@ -196,7 +188,10 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     {
         IsVoiceActive = _voice.IsActive && _voice.Targets.Contains(_peerId);
         IsTransmittingVoice = _voice.IsTransmitting;
-        IsPeerSpeaking = _voice.IsPeerSpeaking;
+        IsPeerReachable = _session?.State == SessionState.Connected;
+
+        // A peer that went away cannot be speaking; leaving the indicator lit would be a lie.
+        IsPeerSpeaking = IsPeerReachable && _voice.IsPeerSpeaking;
 
         if (!IsVoiceActive && !_voice.IsReceiving)
         {
@@ -208,7 +203,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            IsPeerSpeaking = _voice.IsPeerSpeaking;
+            IsPeerSpeaking = IsPeerReachable && _voice.IsPeerSpeaking;
 
             if (!DebugMode)
             {
@@ -237,37 +232,87 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _voice.SetTransmitting(value);
     }
 
-    partial void OnCaptureModeChanged(AudioCaptureMode value) => ApplyAudioDevices();
-
-    partial void OnSelectedInputDeviceChanged(AudioDeviceInfo? value) => ApplyAudioDevices();
-
-    partial void OnSelectedOutputDeviceChanged(AudioDeviceInfo? value) => ApplyAudioDevices();
-
-    private void ApplyAudioDevices() =>
-        _voice.UpdateDevices(SelectedInputDevice?.Id, SelectedOutputDevice?.Id, CaptureMode);
-
     [RelayCommand]
     private async Task ShareScreenAsync()
     {
-        var monitor = SelectedMonitor ?? Monitors.FirstOrDefault();
-
-        if (monitor is null)
-        {
-            return;
-        }
-
         try
         {
-            await _screenShare.StartSharingAsync([_peerId], monitor.Index, new CaptureSettings(), CancellationToken.None);
+            var settings = _settings.Current;
+
+            await _screenShare.StartSharingAsync(
+                [_peerId],
+                settings.PreferredMonitorIndex,
+                CaptureSettingsFactory.From(settings),
+                CancellationToken.None);
         }
         catch (Exception ex)
         {
-            Application.Current.Dispatcher.Invoke(() => VideoStatsText = ex.Message);
+            ReportShareFailure(ex);
         }
+    }
+
+    private void ReportShareFailure(Exception error)
+    {
+        // Both encoders failing is a state, not a passing event: it stays on the banner with an
+        // explanation until something changes.
+        if (error.Message.Contains("encoder", StringComparison.OrdinalIgnoreCase))
+        {
+            _errors.ShowPersistent(
+                NotificationKey.EncoderUnavailable,
+                $"Nenhum encoder H.264 utilizável nesta máquina. Compartilhar tela ficará indisponível. {error.Message}",
+                "Dispensar",
+                () => _errors.Dismiss(NotificationKey.EncoderUnavailable));
+
+            ShareBlockedReason = "Nenhum encoder H.264 disponível nesta máquina.";
+            CanShare = false;
+            return;
+        }
+
+        _errors.ShowPersistent(
+            NotificationKey.CaptureUnavailable,
+            $"Não foi possível iniciar a captura de tela: {error.Message} " +
+            "Verifique se há atualização do driver de vídeo disponível.",
+            "Dispensar",
+            () => _errors.Dismiss(NotificationKey.CaptureUnavailable));
     }
 
     [RelayCommand]
     private async Task StopShareAsync() => await _screenShare.StopSharingAsync();
+
+    /// <summary>
+    /// Reconnection gives up after its own budget (fase 1). The session does not vanish silently
+    /// after that: it stays visible as Closed with this manual retry.
+    /// </summary>
+    [RelayCommand]
+    private async Task RetryConnectionAsync()
+    {
+        if (_retrying)
+        {
+            return;
+        }
+
+        var peer = _discovery.Peers.FirstOrDefault(p => p.Id == _peerId);
+
+        if (peer is null)
+        {
+            _errors.ShowTransient($"{PeerNickname} não está visível na rede agora.", ErrorSeverity.Warning);
+            return;
+        }
+
+        _retrying = true;
+        CanRetryConnection = false;
+
+        try
+        {
+            DetachSession();
+            await EnsureConnectedAsync(peer).ConfigureAwait(false);
+        }
+        finally
+        {
+            _retrying = false;
+            Application.Current.Dispatcher.Invoke(RefreshHeaderText);
+        }
+    }
 
     private void OnScreenShareStateChanged() =>
         Application.Current.Dispatcher.Invoke(RefreshShareState);
@@ -276,13 +321,26 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     {
         IsSharing = _screenShare.IsSharing && _screenShare.SharingWith.Contains(_peerId);
         IsWatching = _screenShare.IsWatching && _screenShare.WatchingFrom == _peerId;
-        CanShare = !IsSharing && _session?.State == SessionState.Connected;
+
+        var connected = _session?.State == SessionState.Connected;
+        CanShare = !IsSharing && connected && ShareBlockedReason.Length == 0;
 
         if (!IsWatching)
         {
             RemoteVideo = null;
             _remoteBitmap = null;
             VideoStatsText = "";
+            VideoOverlayText = "";
+        }
+        else if (!connected)
+        {
+            // The last decoded frame is still on screen; saying so beats a picture frozen with no
+            // explanation.
+            VideoOverlayText = $"Conexão perdida com {PeerNickname}";
+        }
+        else
+        {
+            VideoOverlayText = "";
         }
     }
 
@@ -366,7 +424,13 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         }
         catch
         {
-            Application.Current.Dispatcher.Invoke(() => HeaderText = "Desconectado");
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                HeaderText = "Desconectado";
+                ConnectionState = SessionState.Closed;
+                CanRetryConnection = true;
+                RefreshShareState();
+            });
         }
     }
 
@@ -388,6 +452,19 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void DetachSession()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        _session.StateChanged -= OnSessionStateChanged;
+        _session.MessageReceived -= OnMessageReceived;
+        _session.RemoteNicknameChanged -= OnRemoteNicknameChanged;
+        _session = null;
+    }
+
     public void Detach()
     {
         _headerTimer.Stop();
@@ -398,13 +475,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _voice.StateChanged -= OnVoiceStateChanged;
         _voice.StatsUpdated -= OnVoiceStatsUpdated;
 
-        if (_session is not null)
-        {
-            _session.StateChanged -= OnSessionStateChanged;
-            _session.MessageReceived -= OnMessageReceived;
-            _session.RemoteNicknameChanged -= OnRemoteNicknameChanged;
-            _session = null;
-        }
+        DetachSession();
     }
 
     public void Dispose() => Detach();
@@ -428,24 +499,35 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         if (state == SessionState.Connected)
         {
             _ = ResendUndeliveredAsync();
+            return;
+        }
+
+        if (state == SessionState.Reconnecting)
+        {
+            _errors.ShowTransient($"Reconectando com {PeerNickname}…", ErrorSeverity.Info);
         }
     }
 
     private void RefreshHeaderText()
     {
-        RefreshShareState();
-        RefreshVoiceState();
-
         var session = _session;
-        HeaderText = session?.State switch
+        var state = session?.State ?? SessionState.Closed;
+
+        ConnectionState = state;
+        CanRetryConnection = state == SessionState.Closed && !_retrying;
+
+        HeaderText = state switch
         {
-            SessionState.Connected => session.RoundTripTime is { } rtt
+            SessionState.Connected => session!.RoundTripTime is { } rtt
                 ? $"Conectado · {rtt.TotalMilliseconds:0} ms"
                 : "Conectado",
             SessionState.Reconnecting => "Reconectando…",
             SessionState.Connecting or SessionState.Handshaking => "Conectando…",
             _ => "Desconectado",
         };
+
+        RefreshShareState();
+        RefreshVoiceState();
     }
 
     private void OnMessageReceived(Envelope envelope)
@@ -464,6 +546,12 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     private async Task HandleIncomingChatMessageAsync(Envelope envelope)
     {
         if (!ChatMessagePayloadCodec.TryDecode(envelope.Payload, out var payload) || payload is null)
+        {
+            return;
+        }
+
+        // A room message travels over the same session; RoomChatRouter owns those.
+        if (payload.RoomId != Guid.Empty)
         {
             return;
         }

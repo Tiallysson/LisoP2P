@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using LisoP2P.App.Services;
 using LisoP2P.App.ViewModels;
 
 namespace LisoP2P.App;
@@ -10,11 +12,13 @@ public partial class RoomWindow : Window
 
     private bool _pushToTalkHeld;
 
-    public RoomWindow(MainViewModel viewModel)
+    public RoomWindow(IAppShell shell)
     {
         InitializeComponent();
-        DataContext = viewModel;
-        _viewModel = viewModel;
+
+        _viewModel = shell.MainViewModel;
+        DataContext = _viewModel;
+        Notifications.ItemsSource = shell.Notifications.Notifications;
 
         PreviewKeyDown += OnPushToTalkKeyDown;
         PreviewKeyUp += OnPushToTalkKeyUp;
@@ -56,18 +60,20 @@ public partial class RoomWindow : Window
 
     private bool MatchesPushToTalk(KeyEventArgs e)
     {
-        if (_viewModel.ActiveRoom is not { } room)
+        if (_viewModel.ActiveRoom is null)
         {
             return false;
         }
 
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        var expected = room.PushToTalk.Key;
+        var expected = _viewModel.PushToTalkKey;
 
-        return key == expected
-            || (expected == Key.LeftCtrl && key == Key.RightCtrl)
-            || (expected == Key.LeftAlt && key == Key.RightAlt)
-            || (expected == Key.LeftShift && key == Key.RightShift);
+        if (expected == Key.Space && Keyboard.FocusedElement is TextBoxBase)
+        {
+            return false;
+        }
+
+        return PushToTalkKeys.Matches(expected, key);
     }
 
     private void MessageInput_PreviewKeyDown(object sender, KeyEventArgs e)

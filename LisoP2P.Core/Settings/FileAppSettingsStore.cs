@@ -48,7 +48,19 @@ public sealed class FileAppSettingsStore : IAppSettingsStore
     {
         if (!File.Exists(FilePath))
         {
-            return new AppSettings();
+            // Written on the first boot rather than on the first save, so the file the README
+            // points at is there to be inspected and hand-edited from the start.
+            var defaults = new AppSettings();
+
+            try
+            {
+                Persist(defaults);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+
+            return defaults;
         }
 
         try

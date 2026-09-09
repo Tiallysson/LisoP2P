@@ -212,6 +212,27 @@ public class AppSettingsTests : IDisposable
         Assert.Equal(40102, ports.MediaPort);
     }
 
+    [Fact]
+    public void DataDirectory_IsNestedOnlyWhenTheSessionPortFlagIsNonDefault()
+    {
+        const string root = @"C:\dados";
+
+        Assert.Equal(root, AppPaths.ResolveDataDirectory(root, []));
+        Assert.Equal(root, AppPaths.ResolveDataDirectory(root, ["--session-port", "47101"]));
+        Assert.Equal(Path.Combine(root, "47201"), AppPaths.ResolveDataDirectory(root, ["--session-port", "47201"]));
+    }
+
+    [Fact]
+    public void DataDirectory_IgnoresAPortThatOnlyCameFromTheFile()
+    {
+        // Changing the session port in Configurações must not move identity.json and hand the user
+        // a brand new identity; only the command-line flag isolates a second dev instance.
+        const string root = @"C:\dados";
+
+        Assert.Equal(root, AppPaths.ResolveDataDirectory(root, ["--media-port", "50000"]));
+        Assert.Equal(root, AppPaths.ResolveDataDirectory(root, ["--session-port", "banana"]));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))
