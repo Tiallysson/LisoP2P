@@ -1,0 +1,313 @@
+<UserControl x:Class="LisoP2P.App.Views.ChatView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:conv="clr-namespace:LisoP2P.App.Converters"
+             xmlns:vm="clr-namespace:LisoP2P.App.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="480">
+    <UserControl.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:EmptyToVisibilityConverter x:Key="EmptyToVis" />
+        <conv:NullToVisibilityConverter x:Key="NullToVis" />
+        <conv:NicknameToInitialsConverter x:Key="ToInitials" />
+        <conv:SessionStateToBrushConverter x:Key="StateToBrush" />
+
+        <DataTemplate DataType="{x:Type vm:ChatViewModel}">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Style="{StaticResource FlatButton}"
+                        Content="Tentar novamente"
+                        Command="{Binding RetryConnectionCommand}"
+                        Margin="0,0,6,0"
+                        Visibility="{Binding CanRetryConnection, Converter={StaticResource BoolToVis}}" />
+
+                <CheckBox Style="{StaticResource ThemedCheckBox}"
+                          Content="Voz aberta"
+                          Margin="0,0,8,0"
+                          ToolTip="Desmarcado, o microfone só abre enquanto a tecla de push-to-talk estiver pressionada."
+                          IsChecked="{Binding OpenMicrophone, Mode=TwoWay}"
+                          Visibility="{Binding IsVoiceActive, Converter={StaticResource BoolToVis}}" />
+
+                <Button Command="{Binding ToggleVoiceCommand}"
+                        ToolTip="Ativar ou encerrar a voz nesta conversa">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                            <Setter Property="Content" Value="{StaticResource IconMicrophoneOff}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsVoiceActive}" Value="True">
+                                    <Setter Property="Content" Value="{StaticResource IconMicrophone}" />
+                                    <Setter Property="Foreground" Value="{StaticResource StatusSuccess}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type vm:RoomViewModel}">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="{Binding PushToTalkHint}" Style="{StaticResource TextTiny}"
+                           VerticalAlignment="Center" Margin="0,0,8,0" />
+
+                <Border Width="10" Height="10" CornerRadius="5" VerticalAlignment="Center">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{StaticResource AvatarFill}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsTransmittingVoice}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource StatusSuccess}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Border Background="{StaticResource Surface2}">
+        <Grid>
+
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Visibility="{Binding Converter={StaticResource NullToVis}, ConverterParameter=Invert, FallbackValue=Visible}">
+                <TextBlock Style="{StaticResource IconGlyph}" Text="{StaticResource IconDirectMessages}"
+                           FontSize="34" HorizontalAlignment="Center"
+                           Foreground="{StaticResource TextMuted}" />
+                <TextBlock Text="Escolha um peer ou uma sala para começar"
+                           Style="{StaticResource TextSmall}" Margin="0,10,0,0" />
+            </StackPanel>
+
+            <Grid Visibility="{Binding Converter={StaticResource NullToVis}, FallbackValue=Collapsed}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Height="48" Padding="14,0"
+                        BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,0,0,1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Title}" Style="{StaticResource TextTitle}"
+                                       TextTrimming="CharacterEllipsis" MaxWidth="220" />
+
+                            <Border Width="1" Height="18" Margin="10,0"
+                                    Background="{StaticResource BorderSubtle}" />
+
+                            <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center"
+                                    Margin="0,0,6,0"
+                                    Background="{Binding ConnectionState, Converter={StaticResource StateToBrush}}" />
+
+                            <TextBlock Text="{Binding SubtitleText}" Style="{StaticResource TextSmall}"
+                                       VerticalAlignment="Center" />
+
+                            <Border Background="{StaticResource Surface3}" CornerRadius="10" Padding="8,2"
+                                    Margin="10,0,0,0" VerticalAlignment="Center"
+                                    Visibility="{Binding PresenterText, Converter={StaticResource EmptyToVis}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource IconGlyph}" Text="{StaticResource IconScreenShare}"
+                                               Foreground="{StaticResource AccentBlue}" FontSize="11" Margin="0,0,5,0" />
+                                    <TextBlock Text="{Binding PresenterText}" Style="{StaticResource TextTiny}"
+                                               Foreground="{StaticResource AccentBlue}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <ContentControl Content="{Binding}" VerticalAlignment="Center" />
+
+                            <Button Style="{StaticResource IconButton}"
+                                    Content="{StaticResource IconScreenShare}"
+                                    Command="{Binding ShareScreenCommand}"
+                                    IsEnabled="{Binding CanShare}"
+                                    Margin="4,0,0,0"
+                                    ToolTip="Compartilhar a tela"
+                                    Visibility="{Binding IsSharing, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}" />
+
+                            <Button Style="{StaticResource IconButton}"
+                                    Content="{StaticResource IconStop}"
+                                    Foreground="{StaticResource StatusDanger}"
+                                    Command="{Binding StopShareCommand}"
+                                    Margin="4,0,0,0"
+                                    ToolTip="Parar de compartilhar"
+                                    Visibility="{Binding IsSharing, Converter={StaticResource BoolToVis}}" />
+
+                            <CheckBox Style="{StaticResource ThemedCheckBox}"
+                                      Content="Depuração"
+                                      Margin="10,0,0,0"
+                                      IsChecked="{Binding DebugMode, Mode=TwoWay}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1" Background="{StaticResource Surface3}" CornerRadius="8"
+                        Margin="12,12,12,4" Height="220"
+                        Visibility="{Binding IsWatching, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Image Source="{Binding RemoteVideo}" Stretch="Uniform"
+                               RenderOptions.BitmapScalingMode="LowQuality" />
+
+                        <Border Background="{StaticResource SurfaceOverlay}" Padding="18,10" CornerRadius="6"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Visibility="{Binding VideoOverlayText, Converter={StaticResource EmptyToVis}}">
+                            <TextBlock Text="{Binding VideoOverlayText}" Style="{StaticResource TextBody}"
+                                       Foreground="{StaticResource StatusDanger}" TextWrapping="Wrap" />
+                        </Border>
+
+                        <TextBlock Text="{Binding VideoStatsText}" Style="{StaticResource TextTiny}"
+                                   Foreground="{StaticResource AccentBlue}"
+                                   Margin="10" VerticalAlignment="Bottom" HorizontalAlignment="Left"
+                                   Visibility="{Binding VideoStatsText, Converter={StaticResource EmptyToVis}}" />
+                    </Grid>
+                </Border>
+
+                <ListBox x:Name="MessagesList" Grid.Row="2"
+                         ItemsSource="{Binding Messages}"
+                         Style="{StaticResource PlainListBox}"
+                         Margin="4,6,4,0"
+                         ScrollViewer.ScrollChanged="MessagesList_ScrollChanged">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="Chrome" Background="Transparent" Padding="10,4">
+                                            <ContentPresenter HorizontalAlignment="Stretch" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Chrome" Property="Background"
+                                                        Value="{StaticResource Surface3}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" VerticalAlignment="Top" Margin="0,1,10,0">
+                                    <Border.Style>
+                                        <Style TargetType="Border" BasedOn="{StaticResource Avatar26}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsOutgoing}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource AccentBlue}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+
+                                    <TextBlock Text="{Binding SenderName, Converter={StaticResource ToInitials}}"
+                                               Style="{StaticResource AvatarInitials}" />
+                                </Border>
+
+                                <StackPanel Grid.Column="1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding SenderName}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBase}">
+                                                    <Setter Property="FontSize" Value="13" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsOutgoing}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource AccentBlue}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <TextBlock Text="{Binding TimeText}" Style="{StaticResource TextTiny}"
+                                                   VerticalAlignment="Center" Margin="8,1,0,0" />
+
+                                        <TextBlock Margin="6,1,0,0" VerticalAlignment="Center"
+                                                   Visibility="{Binding IsOutgoing, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource IconGlyph}">
+                                                    <Setter Property="Text" Value="{StaticResource IconPending}" />
+                                                    <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+                                                    <Setter Property="ToolTip" Value="pendente" />
+                                                    <Setter Property="FontSize" Value="11" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Delivered}" Value="True">
+                                                            <Setter Property="Text" Value="{StaticResource IconDelivered}" />
+                                                            <Setter Property="Foreground" Value="{StaticResource StatusSuccess}" />
+                                                            <Setter Property="ToolTip" Value="entregue" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+
+                                    <TextBlock Text="{Binding Text}" Style="{StaticResource TextBody}"
+                                               Foreground="{StaticResource TextSecondary}"
+                                               TextWrapping="Wrap" Margin="0,1,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <StackPanel Grid.Row="3" Margin="12,6,12,12">
+                    <TextBlock Text="{Binding VoiceStatsText}" Style="{StaticResource TextTiny}"
+                               Margin="2,0,0,6" TextWrapping="Wrap"
+                               Visibility="{Binding VoiceStatsText, Converter={StaticResource EmptyToVis}}" />
+
+                    <TextBlock Text="{Binding ShareBlockedReason}" Style="{StaticResource TextTiny}"
+                               Foreground="{StaticResource StatusWarning}"
+                               Margin="2,0,0,6" TextWrapping="Wrap"
+                               Visibility="{Binding ShareBlockedReason, Converter={StaticResource EmptyToVis}}" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <Grid Grid.Column="0">
+                            <TextBox x:Name="MessageInput"
+                                     Style="{StaticResource InputTextBox}"
+                                     Text="{Binding DraftText, UpdateSourceTrigger=PropertyChanged}"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     MaxHeight="110"
+                                     VerticalScrollBarVisibility="Auto"
+                                     PreviewKeyDown="MessageInput_PreviewKeyDown" />
+
+                            <TextBlock Text="Escreva uma mensagem"
+                                       Style="{StaticResource TextSmall}"
+                                       Foreground="{StaticResource TextMuted}"
+                                       IsHitTestVisible="False"
+                                       Margin="10,0,0,0" VerticalAlignment="Center"
+                                       Visibility="{Binding DraftText, Converter={StaticResource EmptyToVis}, ConverterParameter=Invert}" />
+                        </Grid>
+
+                        <Button Grid.Column="1" Style="{StaticResource IconButton}"
+                                Content="{StaticResource IconSend}"
+                                Command="{Binding SendCommand}"
+                                Width="36" Height="36" Margin="8,0,0,0"
+                                ToolTip="Enviar (Enter)" />
+                    </Grid>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
-using System.Windows.Media;
 using LisoP2P.App.Services;
 using LisoP2P.Net;
 
@@ -42,15 +41,6 @@ public sealed class BoolToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-public sealed class BoolToAlignmentConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is true ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-
-    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
-}
-
 public sealed class InverseBoolConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
@@ -60,74 +50,62 @@ public sealed class InverseBoolConverter : IValueConverter
         value is not true;
 }
 
-public sealed class DeliveredTextConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is true ? "entregue" : "pendente";
-
-    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
-}
-
 public sealed class EmptyToVisibilityConverter : IValueConverter
 {
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        string.IsNullOrWhiteSpace(value as string) ? Visibility.Collapsed : Visibility.Visible;
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var visible = !string.IsNullOrWhiteSpace(value as string);
+
+        if (string.Equals(parameter as string, "Invert", StringComparison.Ordinal))
+        {
+            visible = !visible;
+        }
+
+        return visible ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
 
-/// <summary>
-/// The session state as a colour. "Reconectando" and "Desconectado" have to differ by more than
-/// the wording, which is the whole point of this converter existing.
-/// </summary>
 public sealed class SessionStateToBrushConverter : IValueConverter
 {
-    private static readonly SolidColorBrush Connected = Freeze("#FF98C379");
-    private static readonly SolidColorBrush Working = Freeze("#FFE5C07B");
-    private static readonly SolidColorBrush Closed = Freeze("#FFE06C75");
-
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value switch
+        ThemeBrushes.Lookup(value switch
         {
-            SessionState.Connected => Connected,
-            SessionState.Connecting or SessionState.Handshaking or SessionState.Reconnecting => Working,
-            _ => Closed,
-        };
+            SessionState.Connected => "StatusSuccess",
+            SessionState.Connecting or SessionState.Handshaking or SessionState.Reconnecting => "StatusWarning",
+            _ => "StatusDanger",
+        });
 
     public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
+}
 
-    private static SolidColorBrush Freeze(string hex)
-    {
-        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
-        brush.Freeze();
-        return brush;
-    }
+public sealed class SessionStateToDotBrushConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        ThemeBrushes.Lookup(value switch
+        {
+            SessionState.Connected => "StatusSuccess",
+            SessionState.Connecting or SessionState.Handshaking or SessionState.Reconnecting => "StatusWarning",
+            _ => "TextMuted",
+        });
+
+    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
 }
 
 public sealed class SeverityToBrushConverter : IValueConverter
 {
-    private static readonly SolidColorBrush Info = Freeze("#FF2F3B47");
-    private static readonly SolidColorBrush Warning = Freeze("#FF3E3520");
-    private static readonly SolidColorBrush Error = Freeze("#FF43262A");
-
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value switch
+        ThemeBrushes.Lookup(value switch
         {
-            ErrorSeverity.Warning => Warning,
-            ErrorSeverity.Error => Error,
-            _ => Info,
-        };
+            ErrorSeverity.Warning => "NotificationWarning",
+            ErrorSeverity.Error => "NotificationError",
+            _ => "NotificationInfo",
+        });
 
     public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
-
-    private static SolidColorBrush Freeze(string hex)
-    {
-        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
-        brush.Freeze();
-        return brush;
-    }
 }

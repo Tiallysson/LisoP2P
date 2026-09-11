@@ -15,7 +15,7 @@ using LisoP2P.Storage;
 
 namespace LisoP2P.App.ViewModels;
 
-public sealed partial class RoomViewModel : ObservableObject, IDisposable
+public sealed partial class RoomViewModel : ObservableObject, IConversationViewModel, IDisposable
 {
     private readonly IRoomService _rooms;
     private readonly IRoomChatRouter _router;
@@ -34,14 +34,25 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
     public ObservableCollection<RoomMemberViewModel> Members { get; } = [];
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
 
+    public string Title => RoomName;
+    public string SubtitleText => MemberCountText;
+
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Title))]
     private string _roomName = "";
 
     [ObservableProperty]
     private string _draftText = "";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubtitleText))]
     private string _memberCountText = "";
+
+    [ObservableProperty]
+    private SessionState _connectionState = SessionState.Connected;
+
+    [ObservableProperty]
+    private int _voiceMemberCount;
 
     [ObservableProperty]
     private bool _canShare;
@@ -177,6 +188,10 @@ public sealed partial class RoomViewModel : ObservableObject, IDisposable
 
         RoomName = _rooms.RoomName;
         MemberCountText = Members.Count == 1 ? "1 membro" : $"{Members.Count} membros";
+        VoiceMemberCount = Members.Count;
+        ConnectionState = Members.Any(m => !m.IsCurrentUser && m.ConnectionState == SessionState.Reconnecting)
+            ? SessionState.Reconnecting
+            : SessionState.Connected;
 
         RefreshShareState();
         _ = SyncMediaTargetsAsync();

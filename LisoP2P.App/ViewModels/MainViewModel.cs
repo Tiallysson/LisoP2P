@@ -27,9 +27,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly IErrorPresenter _errors;
     private readonly NetworkOptions _options;
 
-    public string ShortId => _identity.Id.ToString();
     public string Fingerprint => _identity.Fingerprint;
     public ObservableCollection<PeerViewModel> Peers { get; } = [];
+    public ObservableCollection<RoomSummaryViewModel> Rooms { get; } = [];
+
+    public IConversationViewModel? ActiveConversation =>
+        IsRoomSelected ? ActiveRoom : ActiveChat;
+
+    public bool IsMemberPanelVisible => IsRoomSelected && ActiveRoom is not null;
+    public bool HasRoom => ActiveRoom is not null;
+
+    public event Action? SettingsRequested;
+    public event Action? CaptureTestRequested;
 
     /// <summary>Peers already announced this run, so a reconnect does not re-toast the same id.</summary>
     private readonly HashSet<PeerId> _announcedFingerprints = [];
@@ -41,9 +50,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private string _nickname;
 
     [ObservableProperty]
-    private string _nicknameError = "";
-
-    [ObservableProperty]
     private string _manualConnectAddress = "";
 
     [ObservableProperty]
@@ -53,10 +59,31 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private PeerViewModel? _selectedPeer;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ActiveConversation))]
     private ChatViewModel? _activeChat;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ActiveConversation))]
+    [NotifyPropertyChangedFor(nameof(IsMemberPanelVisible))]
+    [NotifyPropertyChangedFor(nameof(HasRoom))]
     private RoomViewModel? _activeRoom;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ActiveConversation))]
+    [NotifyPropertyChangedFor(nameof(IsMemberPanelVisible))]
+    private bool _isRoomSelected;
+
+    [ObservableProperty]
+    private RoomSummaryViewModel? _selectedRoom;
+
+    [ObservableProperty]
+    private bool _isCreatingRoom;
+
+    [ObservableProperty]
+    private bool _isMuted;
+
+    [ObservableProperty]
+    private bool _isDeafened;
 
     [ObservableProperty]
     private string _newRoomName = "Sala";
@@ -132,28 +159,85 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void SaveNickname()
+    private void OpenSettings() => SettingsRequested?.Invoke();
+
+    [RelayCommand]
+    private void OpenCaptureTest() => CaptureTestRequested?.Invoke();
+
+    [RelayCommand]
+    private void ShowDirectMessages()
     {
-        if (!NicknameRules.IsValid(Nickname))
+        IsCreatingRoom = false;
+        SelectedRoom = null;
+        IsRoomSelected = false;
+    }
+
+    [RelayCommand]
+    private void ShowRoom()
+    {
+        if (ActiveRoom is null)
         {
-            NicknameError = $"Informe um nome com até {NicknameRules.MaxLength} caracteres.";
-            Nickname = _identity.Nickname;
             return;
         }
 
-        _identity.SetNickname(Nickname);
-        Nickname = _identity.Nickname;
-        NicknameError = "";
+        IsCreatingRoom = false;
+        SelectedRoom = Rooms.FirstOrDefault();
+        IsRoomSelected = true;
+    }
 
-        var settings = _settings.Current;
-        settings.Nickname = _identity.Nickname;
-        _settings.Save(settings);
+    [RelayCommand]
+    private void StartCreateRoom()
+    {
+        IsRoomSelected = false;
+        SelectedRoom = null;
+        IsCreatingRoom = true;
+    }
+
+    [RelayCommand]
+    private void CancelCreateRoom() => IsCreatingRoom = false;
+
+    [RelayCommand]
+    private void ToggleMute() => IsMuted = !IsMuted;
+
+    [RelayCommand]
+    private void ToggleDeafen() => IsDeafened = !IsDeafened;
+
+    public void SetPushToTalk(bool pressed)
+    {
+        if (IsMuted && pressed)
+        {
+            return;
+        }
+
+        ActiveConversation?.SetPushToTalk(pressed);
+    }
+
+    partial void OnIsMutedChanged(bool value)
+    {
+        if (value)
+        {
+            ActiveConversation?.SetPushToTalk(false);
+        }
+    }
+
+    partial void OnIsDeafenedChanged(bool value) => _voice.Volume = value ? 0f : 1f;
+
+    partial void OnSelectedRoomChanged(RoomSummaryViewModel? value)
+    {
+        if (value is not null)
+        {
+            IsCreatingRoom = false;
+            IsRoomSelected = true;
+        }
     }
 
     partial void OnSelectedPeerChanged(PeerViewModel? value)
     {
         if (value is not null)
         {
+            IsCreatingRoom = false;
+            SelectedRoom = null;
+            IsRoomSelected = false;
             _ = OpenConversationAsync(value);
         }
     }
@@ -251,19 +335,54 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
 
             RoomStatusText = $"{_rooms.RoomName} · {_rooms.Members.Count} membro(s)";
+            SyncRoomSummary();
             return;
         }
 
         ActiveRoom?.Dispose();
         ActiveRoom = null;
+        Rooms.Clear();
+        SelectedRoom = null;
+        IsRoomSelected = false;
         RoomStatusText = "Nenhuma sala ativa";
+    }
+
+    private void SyncRoomSummary()
+    {
+        if (_rooms.CurrentRoom is not { } id)
+        {
+            return;
+        }
+
+        var summary = Rooms.FirstOrDefault(r => r.Id == id);
+
+        if (summary is null)
+        {
+            summary = new RoomSummaryViewModel(id, _rooms.RoomName);
+            Rooms.Clear();
+            Rooms.Add(summary);
+            SelectedRoom = summary;
+        }
+
+        summary.Name = _rooms.RoomName;
+        summary.MemberCount = _rooms.Members.Count;
     }
 
     [RelayCommand]
     private void CreateRoom()
     {
-        _rooms.CreateRoom(NewRoomName);
+        var name = NewRoomName.Trim();
+
+        if (name.Length == 0)
+        {
+            _errors.ShowTransient("Dê um nome à sala.", ErrorSeverity.Warning);
+            return;
+        }
+
+        _rooms.CreateRoom(name);
+        IsCreatingRoom = false;
         SyncRoomState();
+        ShowRoom();
     }
 
     [RelayCommand]
@@ -278,6 +397,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             await _rooms.InviteAsync(SelectedPeer.Id, CancellationToken.None);
             SyncRoomState();
+            ShowRoom();
         }
         catch (Exception ex)
         {

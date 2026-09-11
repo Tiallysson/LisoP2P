@@ -3,510 +3,68 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:LisoP2P.App"
-        xmlns:conv="clr-namespace:LisoP2P.App.Converters" xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:conv="clr-namespace:LisoP2P.App.Converters"
+        xmlns:views="clr-namespace:LisoP2P.App.Views"
         mc:Ignorable="d"
-        Title="LisoP2P" Height="500" Width="820" MinWidth="600" MinHeight="360">
+        Title="LisoP2P" Height="680" Width="1100" MinWidth="820" MinHeight="480"
+        Background="{StaticResource Surface2}">
     <Window.Resources>
-        <conv:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
-        <conv:BoolToAlignmentConverter x:Key="BoolToAlignmentConverter" />
-        <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-        <conv:DeliveredTextConverter x:Key="DeliveredTextConverter" />
-        <conv:EmptyToVisibilityConverter x:Key="EmptyToVisibilityConverter" />
-        <conv:SessionStateToBrushConverter x:Key="SessionStateToBrushConverter" />
-        <conv:SeverityToBrushConverter x:Key="SeverityToBrushConverter" />
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:SeverityToBrushConverter x:Key="SeverityToBrush" />
     </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ItemsControl x:Name="Notifications" Grid.Row="0" Margin="8,8,8,0">
+        <Grid Grid.Row="0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="56" />
+            <ColumnDefinition Width="184" />
+            <ColumnDefinition Width="*" MinWidth="320" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <views:RoomRailView Grid.Column="0" />
+        <views:RoomSidebarView Grid.Column="1" />
+        <views:ChatView Grid.Column="2" DataContext="{Binding ActiveConversation}" />
+
+        <views:MemberPanelView Grid.Column="3" Width="168"
+                               Visibility="{Binding IsMemberPanelVisible, Converter={StaticResource BoolToVis}}" />
+
+        <ItemsControl x:Name="Notifications" Grid.Column="2" Grid.ColumnSpan="2"
+                      Panel.ZIndex="10"
+                      VerticalAlignment="Top" Margin="12,10,12,0">
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Border CornerRadius="4" Padding="10,7" Margin="0,0,0,4"
-                            Background="{Binding Severity, Converter={StaticResource SeverityToBrushConverter}}">
+                    <Border CornerRadius="6" Padding="12,8" Margin="0,0,0,6"
+                            Background="{Binding Severity, Converter={StaticResource SeverityToBrush}}"
+                            BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Column="0" Text="{Binding Message}" Foreground="White"
-                                       FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="0" Text="{Binding Message}" Style="{StaticResource TextSmall}"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       TextWrapping="Wrap" VerticalAlignment="Center" />
 
-                            <Button Grid.Column="1" Content="{Binding ActionLabel}" Command="{Binding Action}"
-                                    Padding="10,3" Margin="10,0,0,0" FontSize="11"
-                                    Visibility="{Binding HasAction, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            <Button Grid.Column="1" Style="{StaticResource FlatButton}"
+                                    Content="{Binding ActionLabel}" Command="{Binding Action}"
+                                    Margin="10,0,0,0"
+                                    Visibility="{Binding HasAction, Converter={StaticResource BoolToVis}}" />
                         </Grid>
                     </Border>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
-
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="240" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <DockPanel Grid.Column="0" Background="#FF1E1E1E">
-                <StackPanel DockPanel.Dock="Top" Margin="12">
-                    <TextBlock Text="Seu nome" Foreground="Gray" FontSize="11" Margin="0,0,0,4" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <TextBox Grid.Column="0"
-                                 Text="{Binding Nickname, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 MaxLength="24"
-                                 Padding="4,3"
-                                 VerticalContentAlignment="Center">
-                            <TextBox.InputBindings>
-                                <KeyBinding Key="Enter" Command="{Binding SaveNicknameCommand}" />
-                            </TextBox.InputBindings>
-                        </TextBox>
-
-                        <Button Grid.Column="1"
-                                Content="Salvar"
-                                Command="{Binding SaveNicknameCommand}"
-                                Margin="6,0,0,0"
-                                Padding="8,3" />
-                    </Grid>
-                    <TextBlock Text="{Binding NicknameError}"
-                               Foreground="#FFE06C75"
-                               FontSize="11"
-                               Margin="0,4,0,0"
-                               TextWrapping="Wrap"
-                               Visibility="{Binding NicknameError, Converter={StaticResource EmptyToVisibilityConverter}}" />
-                    <TextBlock Text="{Binding ShortId}" Foreground="Gray" FontSize="11" Margin="0,6,0,0"
-                               ToolTip="Início da sua chave pública" />
-                    <TextBlock Text="{Binding Fingerprint}" Foreground="#FF6C7480" FontSize="9"
-                               FontFamily="Consolas" TextWrapping="Wrap" Margin="0,2,0,0"
-                               ToolTip="Seu fingerprint. Compare com o que o outro lado vê ao conectar." />
-
-                    <Button Content="Configurações"
-                            Click="OpenSettings_Click"
-                            Margin="0,8,0,0"
-                            Padding="6,4" />
-
-                    <Separator Margin="0,10,0,8" Background="#FF333333" />
-
-                    <TextBlock Text="Sala" Foreground="Gray" FontSize="11" Margin="0,0,0,4" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <TextBox Grid.Column="0"
-                                 Text="{Binding NewRoomName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 MaxLength="24"
-                                 Padding="4,3"
-                                 VerticalContentAlignment="Center" />
-
-                        <Button Grid.Column="1"
-                                Content="Criar"
-                                Command="{Binding CreateRoomCommand}"
-                                Margin="6,0,0,0"
-                                Padding="8,3" />
-                    </Grid>
-
-                    <TextBlock Text="{Binding RoomStatusText}" Foreground="Gray" FontSize="10"
-                               TextWrapping="Wrap" Margin="0,6,0,0" />
-
-                    <Button Content="Convidar peer selecionado"
-                            Command="{Binding InviteSelectedPeerCommand}"
-                            Margin="0,6,0,0"
-                            Padding="6,4" />
-
-                    <Button Content="Abrir sala"
-                            Click="OpenRoom_Click"
-                            Margin="0,6,0,0"
-                            Padding="6,4" />
-
-                    <Button Content="Sair da sala"
-                            Command="{Binding LeaveRoomCommand}"
-                            Margin="0,6,0,0"
-                            Padding="6,4" />
-                </StackPanel>
-
-                <StackPanel DockPanel.Dock="Bottom" Margin="12">
-                    <TextBox Text="{Binding ManualConnectAddress, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6" Opacity="0.5" >
-                        <TextBox.Style>
-                            <Style TargetType="TextBox">
-
-                                <Setter Property="Background" Value="White"/>
-                                <Setter Property="BorderBrush" Value="#CCCCCC"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Padding" Value="2"/>
-                                <Setter Property="VerticalContentAlignment" Value="Center"/>
-
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="TextBox">
-
-                                            <Border Background="{TemplateBinding Background}"
-                                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                                    CornerRadius="5">
-
-                                                <ScrollViewer x:Name="PART_ContentHost"
-                                                                Margin="{TemplateBinding Padding}"/>
-
-                                            </Border>
-
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-
-                            </Style>
-                        </TextBox.Style>
-                    </TextBox>
-                    <Button Content="Teste de captura"
-                            Click="OpenCaptureTest_Click"
-                            Margin="0,0,0,6"
-                            Padding="6,4">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}"
-                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                        CornerRadius="5"
-                                        Padding="{TemplateBinding Padding}">
-
-                                    <ContentPresenter HorizontalAlignment="Center"
-                                                      VerticalAlignment="Center"/>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                    </Button>
-                    <Button Content="Conectar manualmente" Command="{Binding ConnectManuallyCommand}" >
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}"
-                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                        CornerRadius="5"
-                                        Padding="{TemplateBinding Padding}">
-
-                                    <ContentPresenter HorizontalAlignment="Center"
-                              VerticalAlignment="Center"/>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                    </Button>
-                </StackPanel>
-
-                <ListBox ItemsSource="{Binding Peers}"
-                         SelectedItem="{Binding SelectedPeer, Mode=TwoWay}"
-                         Margin="12,0"
-                         Background="Transparent"
-                         BorderThickness="0">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Border Padding="6" Margin="0,0,0,4" Background="#FF2A2A2A" CornerRadius="4">
-                                <StackPanel Orientation="Horizontal">
-                                    <Ellipse Width="10" Height="10" Fill="LimeGreen" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Nickname}" Foreground="White" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding Address}" Foreground="Gray" FontSize="11" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
-
-            <Grid Grid.Column="1" Background="#FF252526">
-                <TextBlock Text="Selecione um peer para conversar"
-                           Visibility="{Binding ActiveChat, Converter={StaticResource NullToVisibilityConverter}, ConverterParameter=Invert}"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           Foreground="Gray"
-                           FontSize="16" />
-
-                <DockPanel Visibility="{Binding ActiveChat, Converter={StaticResource NullToVisibilityConverter}}"
-                           DataContext="{Binding ActiveChat}">
-                    <Border DockPanel.Dock="Top" Padding="12" Background="#FF2A2A2A">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="{Binding PeerNickname}" Foreground="White" FontWeight="Bold" FontSize="15" />
-                                <StackPanel Orientation="Horizontal">
-                                    <Ellipse Width="9" Height="9" VerticalAlignment="Center" Margin="0,0,6,0"
-                                             Fill="{Binding ConnectionState, Converter={StaticResource SessionStateToBrushConverter}}" />
-                                    <TextBlock Text="{Binding HeaderText}"
-                                               Foreground="{Binding ConnectionState, Converter={StaticResource SessionStateToBrushConverter}}"
-                                               FontSize="12" VerticalAlignment="Center" />
-                                    <Button Content="Tentar novamente"
-                                            Command="{Binding RetryConnectionCommand}"
-                                            Margin="10,0,0,0" Padding="8,1" FontSize="11"
-                                            Visibility="{Binding CanRetryConnection, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                </StackPanel>
-                            </StackPanel>
-
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="Compartilhando tela"
-                                           Foreground="#FF9CDCFE"
-                                           FontSize="12"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,8,0"
-                                           Visibility="{Binding IsSharing, Converter={StaticResource BoolToVisibilityConverter}}" />
-
-                                <CheckBox Content="Debug"
-                                          Foreground="Gray"
-                                          VerticalAlignment="Center"
-                                          Margin="0,0,8,0"
-                                          IsChecked="{Binding DebugMode, Mode=TwoWay}" />
-
-                                <Ellipse Width="9"
-                                         Height="9"
-                                         Fill="#FF6AC46A"
-                                         VerticalAlignment="Center"
-                                         Margin="0,0,4,0"
-                                         Visibility="{Binding IsTransmittingVoice, Converter={StaticResource BoolToVisibilityConverter}}" />
-
-                                <TextBlock Text="Falando"
-                                           Foreground="#FF6AC46A"
-                                           FontSize="12"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,8,0"
-                                           Visibility="{Binding IsTransmittingVoice, Converter={StaticResource BoolToVisibilityConverter}}" />
-
-                                <Ellipse Width="9"
-                                         Height="9"
-                                         Fill="#FF9CDCFE"
-                                         VerticalAlignment="Center"
-                                         Margin="0,0,4,0"
-                                         Visibility="{Binding IsPeerSpeaking, Converter={StaticResource BoolToVisibilityConverter}}" />
-
-                                <TextBlock Text="{Binding PeerNickname, StringFormat={}{0} falando}"
-                                           Foreground="#FF9CDCFE"
-                                           FontSize="12"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,8,0"
-                                           Visibility="{Binding IsPeerSpeaking, Converter={StaticResource BoolToVisibilityConverter}}" />
-
-                                <Button Command="{Binding ToggleVoiceCommand}"
-                                        Padding="10,5"
-                                        Margin="0,0,6,0"
-                                        ToolTip="Ativar ou encerrar a voz nesta conversa">
-                                    <StackPanel Orientation="Horizontal">
-                                        <materialDesign:PackIcon Width="18" Height="18">
-                                            <materialDesign:PackIcon.Style>
-                                                <Style TargetType="materialDesign:PackIcon">
-                                                    <Setter Property="Kind" Value="MicrophoneOff" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsVoiceActive}" Value="True">
-                                                            <Setter Property="Kind" Value="Microphone" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </materialDesign:PackIcon.Style>
-                                        </materialDesign:PackIcon>
-                                    </StackPanel>
-                                </Button>
-
-                                <Button Content="Compartilhar tela"
-                                        Command="{Binding ShareScreenCommand}"
-                                        Padding="10,5"
-                                        ToolTip="{Binding ShareBlockedReason}"
-                                        Visibility="{Binding CanShare, Converter={StaticResource BoolToVisibilityConverter}}" />
-
-                                <TextBlock Text="{Binding ShareBlockedReason}"
-                                           Foreground="#FFE5C07B" FontSize="11"
-                                           VerticalAlignment="Center" Margin="0,0,8,0"
-                                           TextTrimming="CharacterEllipsis" MaxWidth="220"
-                                           ToolTip="{Binding ShareBlockedReason}"
-                                           Visibility="{Binding ShareBlockedReason, Converter={StaticResource EmptyToVisibilityConverter}}" />
-
-                                <Button Content="Parar de compartilhar"
-                                        Command="{Binding StopShareCommand}"
-                                        Padding="10,5"
-                                        Visibility="{Binding IsSharing, Converter={StaticResource BoolToVisibilityConverter}}" />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-                    <Border DockPanel.Dock="Top"
-                            Padding="12,6"
-                            Background="#FF232323"
-                            Visibility="{Binding IsVoiceActive, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <StackPanel Orientation="Horizontal">
-                            <CheckBox Content="Voz aberta"
-                                      Foreground="Gray"
-                                      VerticalAlignment="Center"
-                                      Margin="0,0,10,0"
-                                      ToolTip="Desmarcado, o microfone só abre enquanto a tecla de push-to-talk estiver pressionada."
-                                      IsChecked="{Binding OpenMicrophone, Mode=TwoWay}" />
-
-                            <TextBlock Text="Dispositivos e tecla de push-to-talk ficam em Configurações → Áudio."
-                                       Foreground="#FF6C7480"
-                                       FontSize="11"
-                                       VerticalAlignment="Center" />
-
-                            <TextBlock Text="{Binding VoiceStatsText}"
-                                       Foreground="#FF9CDCFE"
-                                       FontSize="11"
-                                       VerticalAlignment="Center"
-                                       Margin="12,0,0,0"
-                                       Visibility="{Binding VoiceStatsText, Converter={StaticResource EmptyToVisibilityConverter}}" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border DockPanel.Dock="Top"
-                            Background="Black"
-                            MaxHeight="430"
-                            Visibility="{Binding IsWatching, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <Grid>
-                            <Image Source="{Binding RemoteVideo}" Stretch="Uniform" RenderOptions.BitmapScalingMode="LowQuality" />
-
-                            <Border Background="#CC000000" Padding="18,10" CornerRadius="6"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    Visibility="{Binding VideoOverlayText, Converter={StaticResource EmptyToVisibilityConverter}}">
-                                <TextBlock Text="{Binding VideoOverlayText}" Foreground="#FFE06C75"
-                                           FontSize="14" TextWrapping="Wrap" />
-                            </Border>
-
-                            <TextBlock Text="{Binding VideoStatsText}"
-                                       Foreground="#FF9CDCFE"
-                                       FontSize="11"
-                                       Margin="8"
-                                       VerticalAlignment="Bottom"
-                                       HorizontalAlignment="Left"
-                                       Visibility="{Binding VideoStatsText, Converter={StaticResource EmptyToVisibilityConverter}}" />
-                        </Grid>
-                    </Border>
-
-                    <Border DockPanel.Dock="Bottom" Padding="12" Background="#FF2A2A2A">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="MessageInput"
-                                     Grid.Column="0"
-                                     Text="{Binding DraftText, UpdateSourceTrigger=PropertyChanged}"
-                                     AcceptsReturn="True"
-                                     TextWrapping="Wrap"
-                                     MaxHeight="90"
-                                     VerticalScrollBarVisibility="Auto"
-                                     PreviewKeyDown="MessageInput_PreviewKeyDown" 
-                                     Opacity="0.5" >
-                                <TextBox.Style>
-                                    <Style TargetType="TextBox">
-
-                                        <Setter Property="Background" Value="White"/>
-                                        <Setter Property="BorderBrush" Value="#CCCCCC"/>
-                                        <Setter Property="BorderThickness" Value="1"/>
-                                        <Setter Property="Padding" Value="6"/>
-                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
-
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="TextBox">
-
-                                                    <Border Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                                            CornerRadius="5">
-
-                                                        <ScrollViewer x:Name="PART_ContentHost"
-                                                                      Margin="{TemplateBinding Padding}"/>
-
-                                                    </Border>
-
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-
-                                    </Style>
-                                </TextBox.Style>
-                            </TextBox>
-                            <Button Grid.Column="1"
-                                    Margin="8,0,0,0"
-                                    Command="{Binding SendCommand}"
-                                    Padding="15,8">     
-
-                                <StackPanel Orientation="Horizontal" Width="17">
-                                    <materialDesign:PackIcon Kind="Send"
-                                                             Width="18"
-                                                             Height="18"
-                                                             Margin="0,0,8,0"/>
-
-                                </StackPanel>
-
-                                <Button.Template>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border Background="{TemplateBinding Background}"
-                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                CornerRadius="5"
-                                                Padding="{TemplateBinding Padding}">
-
-                                            <ContentPresenter HorizontalAlignment="Center"
-                                                              VerticalAlignment="Center"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Button.Template>
-
-                            </Button>
-                        </Grid>
-                    </Border>
-
-                    <ListBox x:Name="MessagesList"
-                             ItemsSource="{Binding Messages}"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             ScrollViewer.ScrollChanged="MessagesList_ScrollChanged"
-                             VirtualizingPanel.IsVirtualizing="True"
-                             VirtualizingPanel.VirtualizationMode="Recycling">
-                        <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
-                                <Setter Property="HorizontalContentAlignment"
-                                        Value="{Binding IsOutgoing, Converter={StaticResource BoolToAlignmentConverter}}" />
-                                <Setter Property="Focusable" Value="False" />
-                            </Style>
-                        </ListBox.ItemContainerStyle>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="#FF3A3A3D" CornerRadius="6" Padding="8" Margin="0,2" MaxWidth="420">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Text}" Foreground="White" TextWrapping="Wrap" />
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
-                                            <TextBlock Text="{Binding TimeText}" Foreground="Gray" FontSize="10" />
-                                            <TextBlock Text="{Binding Delivered, Converter={StaticResource DeliveredTextConverter}}"
-                                                       Foreground="Gray" FontSize="10" Margin="6,0,0,0"
-                                                       Visibility="{Binding IsOutgoing, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </DockPanel>
-            </Grid>
         </Grid>
 
-        <StatusBar Grid.Row="2"
-           Background="Black"
-           Foreground="White">
-
-            <StatusBarItem>
-                <TextBlock Text="{Binding StatusText}"
-                   Foreground="White"/>
-            </StatusBarItem>
-
-        </StatusBar>
+        <Border Grid.Row="1" Background="{StaticResource Surface0}" Padding="12,3">
+            <TextBlock Text="{Binding StatusText}" Style="{StaticResource TextTiny}" />
+        </Border>
     </Grid>
 </Window>

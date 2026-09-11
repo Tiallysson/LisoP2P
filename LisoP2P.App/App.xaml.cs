@@ -189,8 +189,6 @@ public partial class App : Application, IAppShell
     public CaptureTestWindow CreateCaptureTestWindow() =>
         new(_root.GetRequiredService<CaptureTestViewModel>());
 
-    public RoomWindow CreateRoomWindow() => new(this);
-
     public SettingsWindow CreateSettingsWindow() =>
         new(_root.GetRequiredService<SettingsViewModel>());
 

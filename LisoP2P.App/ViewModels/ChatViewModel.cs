@@ -16,7 +16,7 @@ using LisoP2P.Storage;
 
 namespace LisoP2P.App.ViewModels;
 
-public sealed partial class ChatViewModel : ObservableObject, IDisposable
+public sealed partial class ChatViewModel : ObservableObject, IConversationViewModel, IDisposable
 {
     private readonly PeerId _peerId;
     private readonly IChatStore _chatStore;
@@ -36,13 +36,18 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     public PeerId PeerId => _peerId;
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
 
+    public string Title => PeerNickname;
+    public string SubtitleText => HeaderText;
+
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Title))]
     private string _peerNickname;
 
     [ObservableProperty]
     private string _draftText = "";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubtitleText))]
     private string _headerText = "Desconectado";
 
     /// <summary>
@@ -99,6 +104,12 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _voiceStatsText = "";
 
+    [ObservableProperty]
+    private string _presenterText = "";
+
+    [ObservableProperty]
+    private string _pushToTalkHint = "";
+
     public ChatViewModel(
         PeerId peerId,
         string nickname,
@@ -129,9 +140,12 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _voice.StateChanged += OnVoiceStateChanged;
         _voice.StatsUpdated += OnVoiceStatsUpdated;
 
+        _settings.Changed += OnSettingsChanged;
+
         _headerTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(2) };
         _headerTimer.Tick += (_, _) => RefreshHeaderText();
 
+        RefreshPushToTalkHint();
         RefreshShareState();
         RefreshVoiceState();
     }
@@ -181,6 +195,14 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             OutputDeviceId = settings.AudioOutputDeviceId,
         };
     }
+
+    private void OnSettingsChanged(AppSettings settings) =>
+        Application.Current.Dispatcher.Invoke(RefreshPushToTalkHint);
+
+    private void RefreshPushToTalkHint() =>
+        PushToTalkHint = $"Segure {PushToTalkKeys.Describe(PushToTalkKeys.Parse(_settings.Current.PushToTalkKey))} para falar";
+
+    private string SenderNameFor(bool outgoing) => outgoing ? _identity.Nickname : PeerNickname;
 
     private void OnVoiceStateChanged() => Application.Current.Dispatcher.Invoke(RefreshVoiceState);
 
@@ -325,6 +347,10 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         var connected = _session?.State == SessionState.Connected;
         CanShare = !IsSharing && connected && ShareBlockedReason.Length == 0;
 
+        PresenterText = IsSharing
+            ? "Você está compartilhando"
+            : IsWatching ? $"{PeerNickname} está compartilhando" : "";
+
         if (!IsWatching)
         {
             RemoteVideo = null;
@@ -404,7 +430,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             Messages.Clear();
             foreach (var message in history)
             {
-                Messages.Add(ChatMessageViewModel.From(message));
+                Messages.Add(ChatMessageViewModel.From(message, SenderNameFor(message.IsOutgoing)));
             }
         });
     }
@@ -474,6 +500,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
         _screenShare.StatsUpdated -= OnScreenShareStatsUpdated;
         _voice.StateChanged -= OnVoiceStateChanged;
         _voice.StatsUpdated -= OnVoiceStatsUpdated;
+        _settings.Changed -= OnSettingsChanged;
 
         DetachSession();
     }
@@ -622,7 +649,7 @@ public sealed partial class ChatViewModel : ObservableObject, IDisposable
             Delivered = false,
         };
         await _chatStore.SaveMessageAsync(stored).ConfigureAwait(false);
-        Messages.Add(ChatMessageViewModel.From(stored));
+        Messages.Add(ChatMessageViewModel.From(stored, SenderNameFor(stored.IsOutgoing)));
 
         await SendChatEnvelopeAsync(messageId, text).ConfigureAwait(false);
     }

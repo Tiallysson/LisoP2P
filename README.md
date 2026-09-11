@@ -41,10 +41,80 @@ visível, erros que viram estado na tela em vez de exceção crua, e um executá
   o áudio: captura WASAPI (`WasapiAudioCapture`), playback (`WasapiAudioPlayback`),
   codec Opus (`OpusAudioEncoder`/`OpusAudioDecoder`) e normalização de amostras
   (`AudioResampler`, `AudioFrameAccumulator`).
-- `LisoP2P.App` — interface WPF (MVVM), a tela de configurações, a tela de
-  boas-vindas, o banner de erros (`IErrorPresenter`) e o `AppHost`, que separa o
-  que depende de porta do que sobrevive a uma troca de porta.
+- `LisoP2P.App` — interface WPF (MVVM) no layout de quatro colunas estilo
+  Discord (`Views/RoomRailView`, `RoomSidebarView`, `ChatView`,
+  `MemberPanelView`, sobre `Themes/DiscordDark.xaml`), a tela de configurações,
+  a tela de boas-vindas, o banner de erros (`IErrorPresenter`) e o `AppHost`,
+  que separa o que depende de porta do que sobrevive a uma troca de porta.
 - `LisoP2P.Tests` — testes de unidade (xUnit).
+
+## Interface (layout estilo Discord)
+
+A janela principal é um grid de quatro colunas fixas mais a coluna de chat
+flexível, conforme `LisoP2P.App/Docs/frontend-wpf-discord-prompt.md`:
+
+```
+[ Rail 56px ] [ Painel lateral 184px ] [ Chat central * ] [ Membros 168px ]
+```
+
+![Mensagens diretas](docs/frontend-mensagens-diretas.png)
+
+O **rail** tem o botão de mensagens diretas no topo, os avatares de sala
+(iniciais em círculo, com a barra vertical de 4px indicando o item ativo), o
+botão "+" de criar sala e, fixos no rodapé, o teste de captura e as
+configurações.
+
+O **painel lateral** muda de conteúdo conforme o rail: em mensagens diretas
+lista os peers descobertos e o campo de conectar manualmente; numa sala mostra
+o canal de texto único (`# geral` — o protocolo da fase 5 não modela vários
+canais, e a UI não inventa a capacidade), o bloco "voz — N" com os membros em
+forma compacta, e os botões de convidar e sair. O rodapé é o card do usuário
+atual: avatar, nickname, estado da conexão, e os três botões de mic (mudo),
+headphone (deafen) e engrenagem.
+
+![Sala](docs/frontend-sala.png)
+
+A **coluna de chat** é a mesma `UserControl` para a conversa 1:1 e para a sala
+(`ChatView`, ligada a `IConversationViewModel`, que `ChatViewModel` e
+`RoomViewModel` implementam): cabeçalho com título, estado e badge de quem está
+compartilhando, área de vídeo de 220px que só aparece quando há tela chegando,
+lista de mensagens virtualizada com avatar e nome do remetente em toda
+mensagem, e campo de entrada multilinha (Enter envia, Shift+Enter quebra
+linha).
+
+A **coluna de membros** só existe quando há sala ativa — a conversa 1:1 herdada
+da fase 1 continua funcionando sem ela. Cada membro aparece com avatar de 28px,
+bolinha de status (verde `Connected`, âmbar `Reconnecting`, cinza `Closed`) e
+uma segunda linha condicional que prioriza "reconectando" sobre
+"compartilhando".
+
+`IsSpeaking` vira um **anel verde** ao redor do avatar, por troca de
+`Visibility` e não por animação: o sinal já chega da fase 5 no ritmo de
+start/stop de fala, e uma animação contínua gastaria CPU num elemento que pisca
+dezenas de vezes por minuto numa chamada longa.
+
+### Tema e ícones
+
+Toda cor e todo estilo base moram em `LisoP2P.App/Themes/DiscordDark.xaml`,
+mesclado em `App.xaml`. As `UserControl`s não têm nenhuma cor literal — um
+`grep` por `Color="#"` ou `Background="#"` em `LisoP2P.App/Views/` e em
+`MainWindow.xaml` não retorna nada. As cores de estado (`StatusSuccess`,
+`StatusWarning`, `StatusDanger`, `AccentBlue`) mapeiam direto para
+`SessionState`, via um único `SessionStateToBrushConverter` reaproveitado no
+cabeçalho, no card do usuário e no painel de membros.
+
+**Ícones: `Segoe Fluent Icons` (com fallback para `Segoe MDL2 Assets`)**, a
+opção 1 da seção 8 do prompt. A fonte já vem no Windows 10/11, então não entra
+arquivo nenhum no publish single-file da fase 6 — o projeto já carrega
+dependências nativas suficientes (Vortice, NAudio, Concentus) para não valer a
+pena arriscar mais uma ali. Os glifos ficam como recursos nomeados
+(`IconMicrophone`, `IconHeadphone`, `IconScreenShare`, …) no dicionário de
+tema, nunca literais espalhados pelas views. Com a mesma decisão saiu a
+dependência `MaterialDesignThemes`, que só era usada por dois ícones do
+cabeçalho antigo.
+
+A janela de sala separada da fase 5 deixou de existir: sala e conversa 1:1
+compartilham a mesma janela e o mesmo layout, alternadas pelo rail.
 
 ## Nome de usuário
 
@@ -93,7 +163,7 @@ para rodar duas instâncias na mesma máquina sem elas colidirem).
 
 ## Captura de tela (fase 2)
 
-O botão **Teste de captura**, no canto inferior esquerdo da janela principal,
+O botão **Teste de captura**, no rodapé do rail da janela principal,
 abre uma janela separada do chat com: seletor de monitor, iniciar/parar,
 "forçar keyframe", "abrir log", "abrir gravação", preview ao vivo, contadores
 em tempo real (fps capturado, fps codificado, bitrate real, frames
@@ -778,8 +848,9 @@ Consolidado das fases 2, 3, 4 e 5, num lugar só.
   Ed25519 avulso, e uma implementação gerenciada mantém o publish single-file
   livre de uma biblioteca de criptografia nativa) e
   `System.Security.Cryptography.ProtectedData` (DPAPI).
-- `MessagePack`, `Microsoft.Data.Sqlite`, `CommunityToolkit.Mvvm`,
-  `MaterialDesignThemes`.
+- `MessagePack`, `Microsoft.Data.Sqlite`, `CommunityToolkit.Mvvm`. Os ícones da
+  interface vêm da fonte `Segoe Fluent Icons` do próprio Windows, sem pacote de
+  ícones.
 
 ## Build
 

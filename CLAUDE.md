@@ -60,9 +60,11 @@ Six projects, referenced as `Media → Core`, `Net → Core, Media`, `Storage �
 - **`LisoP2P.Storage`** — SQLite chat history (`IChatStore` / `SqliteChatStore`, `StoredMessage`),
   migrated incrementally through `PRAGMA user_version`.
 - **`LisoP2P.App`** (wpf, `net10.0-windows`) — WPF/MVVM UI (`CommunityToolkit.Mvvm`), composed via
-  `Microsoft.Extensions.DependencyInjection` in `App.xaml.cs` (no separate DI framework). The room
-  screen is `RoomWindow` / `RoomViewModel`; the 1:1 conversation stays in `MainWindow` /
-  `ChatViewModel`. Fase 6 added `Services/` (`IAppShell`, `AppHost`, `IErrorPresenter` /
+  `Microsoft.Extensions.DependencyInjection` in `App.xaml.cs` (no separate DI framework).
+  `MainWindow` is the Discord-style four-column shell (`Views/RoomRailView`,
+  `RoomSidebarView`, `ChatView`, `MemberPanelView` over `Themes/DiscordDark.xaml`); room and 1:1
+  share it, driven by `MainViewModel.ActiveConversation` (`RoomViewModel` / `ChatViewModel`, both
+  `IConversationViewModel`). Fase 6 added `Services/` (`IAppShell`, `AppHost`, `IErrorPresenter` /
   `NotificationCenter`, `AppNotification`), `SettingsWindow` / `SettingsViewModel`,
   `WelcomeWindow` / `WelcomeViewModel` and `StartupErrorWindow`.
 - **`LisoP2P.Tests`** (xunit) — codec round-trip/malformed-input coverage, identity persistence,
@@ -72,6 +74,12 @@ Six projects, referenced as `Media → Core`, `Net → Core, Media`, `Storage �
   routing and per-`SenderId` media demultiplexing, plus the fase 6 logic: `PeerId` equality and
   hash code, fingerprint formatting, identity persistence and legacy migration, `AppSettings`
   round-trip and normalization, and the flag > file > default port precedence.
+
+The front-end refactor (`LisoP2P.App/Docs/frontend-wpf-discord-prompt.md`) is implemented: the
+separate `RoomWindow` is gone, every colour and base style lives in `Themes/DiscordDark.xaml` (no
+literal colour in any view), icons are `Segoe Fluent Icons` glyphs exposed as named theme resources
+(no icon package — `MaterialDesignThemes` was dropped with it), and `ChatView` is one control for
+both conversation kinds. Only the visual layer changed; Core/Net/Media/Storage were not touched.
 
 **Hard constraint:** Core, Net, and Media target plain `net10.0` (no `-windows`) and must never
 reference `System.Windows`. Anything UI-facing needed from Net is exposed via an event/callback,

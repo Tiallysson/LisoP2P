@@ -1,0 +1,72 @@
+<UserControl x:Class="LisoP2P.App.Views.MemberPanelView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:conv="clr-namespace:LisoP2P.App.Converters"
+             mc:Ignorable="d" d:DesignWidth="168">
+    <UserControl.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:SessionStateToDotBrushConverter x:Key="StateToDot" />
+    </UserControl.Resources>
+
+    <Border Background="{StaticResource Surface1}">
+        <DockPanel>
+            <Border DockPanel.Dock="Top" Height="48" Padding="12,0"
+                    BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,0,0,1">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource IconGlyph}" Text="{StaticResource IconPeople}"
+                               Margin="0,0,6,0" />
+                    <TextBlock Text="{Binding ActiveRoom.MemberCountText}" Style="{StaticResource TextSmall}" />
+                </StackPanel>
+            </Border>
+
+            <ListBox ItemsSource="{Binding ActiveRoom.Members}"
+                     Style="{StaticResource PlainListBox}"
+                     Margin="6,8,6,8"
+                     Focusable="False">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListItem}">
+                        <Setter Property="Focusable" Value="False" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <Grid Width="32" Height="32" Margin="0,0,8,0">
+                                <Border Style="{StaticResource Avatar28}">
+                                    <TextBlock Text="{Binding Initials}" Style="{StaticResource AvatarInitials}" />
+                                </Border>
+
+                                <Border Style="{StaticResource SpeakingRing}"
+                                        Width="32" Height="32" CornerRadius="16" />
+
+                                <Border Width="9" Height="9" CornerRadius="4.5"
+                                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                        Margin="0,0,1,1"
+                                        BorderBrush="{StaticResource Surface1}" BorderThickness="2"
+                                        ToolTip="{Binding StateText}"
+                                        Background="{Binding ConnectionState, Converter={StaticResource StateToDot}}" />
+                            </Grid>
+
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{Binding DisplayName}" Style="{StaticResource TextSmall}"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="104"
+                                           ToolTip="{Binding Fingerprint}" />
+
+                                <TextBlock Text="reconectando" Style="{StaticResource TextTiny}"
+                                           Foreground="{StaticResource StatusWarning}"
+                                           Visibility="{Binding ShowReconnecting, Converter={StaticResource BoolToVis}}" />
+
+                                <TextBlock Text="compartilhando" Style="{StaticResource TextTiny}"
+                                           Foreground="{StaticResource AccentBlue}"
+                                           Visibility="{Binding ShowSharing, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+    </Border>
+</UserControl>

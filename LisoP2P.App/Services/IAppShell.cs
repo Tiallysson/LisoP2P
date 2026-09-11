@@ -17,7 +17,6 @@ public interface IAppShell
     event Action? Rebuilt;
 
     CaptureTestWindow CreateCaptureTestWindow();
-    RoomWindow CreateRoomWindow();
     SettingsWindow CreateSettingsWindow();
 
     /// <summary>
