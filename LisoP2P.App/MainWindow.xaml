@@ -7,7 +7,8 @@
         xmlns:views="clr-namespace:LisoP2P.App.Views"
         mc:Ignorable="d"
         Title="LisoP2P" Height="680" Width="1100" MinWidth="820" MinHeight="480"
-        Background="{StaticResource Surface2}">
+        Background="{StaticResource Surface2}"
+        TextElement.Foreground="{StaticResource TextPrimary}">
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
         <conv:SeverityToBrushConverter x:Key="SeverityToBrush" />

@@ -10,7 +10,7 @@
         <conv:SessionStateToDotBrushConverter x:Key="StateToDot" />
     </UserControl.Resources>
 
-    <Border Background="{StaticResource Surface1}">
+    <Border Background="{StaticResource Surface1}" TextElement.Foreground="{StaticResource TextPrimary}">
         <DockPanel>
             <Border DockPanel.Dock="Top" Height="48" Padding="12,0"
                     BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,0,0,1">

@@ -12,7 +12,7 @@
         <conv:SessionStateToDotBrushConverter x:Key="StateToDot" />
     </UserControl.Resources>
 
-    <Border Background="{StaticResource Surface1}">
+    <Border Background="{StaticResource Surface1}" TextElement.Foreground="{StaticResource TextPrimary}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />

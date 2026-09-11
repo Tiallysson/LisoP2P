@@ -8,42 +8,50 @@
         Title="Configurações"
         Height="620" Width="640"
         WindowStartupLocation="CenterOwner"
-        Background="#FF1B1B1B">
+        Background="{StaticResource Surface2}"
+        TextElement.Foreground="{StaticResource TextPrimary}">
     <Window.Resources>
         <conv:EmptyToVisibilityConverter x:Key="EmptyToVisibilityConverter" />
         <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
         <conv:InverseBoolConverter x:Key="InverseBoolConverter" />
 
-        <Style TargetType="TextBlock" x:Key="Label">
-            <Setter Property="Foreground" Value="Gray" />
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="Margin" Value="0,10,0,4" />
+        <Style TargetType="TextBlock" x:Key="Label" BasedOn="{StaticResource SectionHeader}">
+            <Setter Property="Margin" Value="0,14,0,5" />
         </Style>
 
-        <Style TargetType="TextBlock" x:Key="Hint">
-            <Setter Property="Foreground" Value="#FF777777" />
-            <Setter Property="FontSize" Value="11" />
+        <Style TargetType="TextBlock" x:Key="Hint" BasedOn="{StaticResource TextTiny}">
             <Setter Property="TextWrapping" Value="Wrap" />
-            <Setter Property="Margin" Value="0,4,0,0" />
+            <Setter Property="Margin" Value="0,5,0,0" />
+        </Style>
+
+        <Style TargetType="TextBlock" x:Key="Value" BasedOn="{StaticResource TextBody}" />
+
+        <Style TargetType="Border" x:Key="Card">
+            <Setter Property="Background" Value="{StaticResource Surface3}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
         </Style>
     </Window.Resources>
 
     <DockPanel Margin="14">
         <Border DockPanel.Dock="Bottom" Margin="0,12,0,0">
             <StackPanel>
-                <TextBlock Text="{Binding ValidationError}" Foreground="#FFE06C75" FontSize="12"
+                <TextBlock Text="{Binding ValidationError}"
+                           Foreground="{StaticResource StatusDanger}" FontSize="12"
                            TextWrapping="Wrap" Margin="0,0,0,8"
                            Visibility="{Binding ValidationError, Converter={StaticResource EmptyToVisibilityConverter}}" />
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="Cancelar" Click="Cancel_Click" Padding="18,6" Margin="0,0,8,0" IsCancel="True" />
-                    <Button Content="Salvar" Command="{Binding SaveCommand}" Padding="24,6"
+                    <Button Content="Cancelar" Click="Cancel_Click" Padding="18,7" Margin="0,0,8,0" IsCancel="True" />
+                    <Button Content="Salvar" Command="{Binding SaveCommand}" Padding="26,7"
+                            Style="{StaticResource PrimaryButton}" FontSize="12"
                             IsEnabled="{Binding IsApplying, Converter={StaticResource InverseBoolConverter}, Mode=OneWay}" />
                 </StackPanel>
             </StackPanel>
         </Border>
 
-        <TabControl Background="#FF1B1B1B" BorderThickness="0">
+        <TabControl>
             <TabItem Header="Geral">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
                     <StackPanel Margin="14">
@@ -66,12 +74,24 @@
                         <TextBlock Text="Monitor a compartilhar" Style="{StaticResource Label}" />
                         <ComboBox ItemsSource="{Binding Monitors}"
                                   SelectedItem="{Binding SelectedMonitor, Mode=TwoWay}"
-                                  DisplayMemberPath="DeviceName" />
+                                  >
+                          <ComboBox.ItemTemplate>
+                              <DataTemplate>
+                                  <TextBlock Text="{Binding DeviceName}" TextTrimming="CharacterEllipsis" />
+                              </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
 
                         <TextBlock Text="Resolução de captura" Style="{StaticResource Label}" />
                         <ComboBox ItemsSource="{Binding Resolutions}"
                                   SelectedItem="{Binding SelectedResolution, Mode=TwoWay}"
-                                  DisplayMemberPath="Label" />
+                                  >
+                          <ComboBox.ItemTemplate>
+                              <DataTemplate>
+                                  <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                              </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
                         <TextBlock Style="{StaticResource Hint}"
                                    Text="A altura é o alvo; a largura acompanha o aspecto do monitor. Codificar na resolução nativa de um monitor 1440p ou 4K derruba o fps." />
 
@@ -80,7 +100,7 @@
                                   SelectedItem="{Binding CaptureFps, Mode=TwoWay}" />
 
                         <TextBlock Text="Qualidade por número de receptores (somente leitura)" Style="{StaticResource Label}" />
-                        <Border Background="#FF232323" CornerRadius="4" Padding="10">
+                        <Border Style="{StaticResource Card}" Padding="12">
                             <ItemsControl ItemsSource="{Binding BitrateLadderSteps}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -90,9 +110,11 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" Text="{Binding Receivers}"
-                                                       Foreground="Gray" FontSize="12" />
+                                                       Style="{StaticResource TextSmall}" />
                                             <TextBlock Grid.Column="1" Text="{Binding Quality}"
-                                                       Foreground="#FF9CDCFE" FontSize="12" FontFamily="Consolas" />
+                                                       Style="{StaticResource TextSmall}"
+                                                       Foreground="{StaticResource AccentBlue}"
+                                                       FontFamily="Consolas" />
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -101,12 +123,12 @@
                         <TextBlock Style="{StaticResource Hint}"
                                    Text="O bitrate é escolhido pela quantidade de receptores no momento em que a tela começa a ser compartilhada. Fixar o valor à mão anularia o degrau." />
 
-                        <Separator Margin="0,16,0,10" Background="#FF333333" />
+                        <Separator Margin="0,20,0,4" />
 
                         <TextBlock Text="Diagnóstico" Style="{StaticResource Label}" />
                         <Button Content="Abrir teste de captura"
                                 Command="{Binding OpenCaptureTestCommand}"
-                                Padding="14,5" HorizontalAlignment="Left" />
+                                HorizontalAlignment="Left" />
                         <TextBlock Style="{StaticResource Hint}"
                                    Text="Janela separada com preview ao vivo, contadores de fps e bitrate, forçar keyframe, gravação e o log do encoder. É a ferramenta para investigar um problema de captura ou de driver de vídeo, não parte do uso normal." />
                     </StackPanel>
@@ -119,12 +141,24 @@
                         <TextBlock Text="Dispositivo de entrada" Style="{StaticResource Label}" />
                         <ComboBox ItemsSource="{Binding InputDevices}"
                                   SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}"
-                                  DisplayMemberPath="Name" />
+                                  >
+                          <ComboBox.ItemTemplate>
+                              <DataTemplate>
+                                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                              </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
 
                         <TextBlock Text="Dispositivo de saída" Style="{StaticResource Label}" />
                         <ComboBox ItemsSource="{Binding OutputDevices}"
                                   SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
-                                  DisplayMemberPath="Name" />
+                                  >
+                          <ComboBox.ItemTemplate>
+                              <DataTemplate>
+                                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                              </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
                         <TextBlock Style="{StaticResource Hint}"
                                    Text="A troca de dispositivo vale na hora, inclusive com a voz já ativa." />
 
@@ -133,20 +167,21 @@
                                   SelectedItem="{Binding AudioMode, Mode=TwoWay}" />
 
                         <CheckBox Content="Usar push-to-talk" IsChecked="{Binding PushToTalkEnabled, Mode=TwoWay}"
-                                  Foreground="Gray" Margin="0,14,0,0" />
+                                  Margin="0,18,0,0" />
                         <TextBlock Style="{StaticResource Hint}"
                                    Text="Desmarcado, o microfone fica aberto enquanto a voz estiver ativa." />
 
                         <TextBlock Text="Tecla de push-to-talk" Style="{StaticResource Label}" />
                         <StackPanel Orientation="Horizontal">
-                            <Border Background="#FF232323" CornerRadius="4" Padding="12,6" MinWidth="110">
-                                <TextBlock Text="{Binding PushToTalkKeyText}" Foreground="White"
-                                           FontSize="13" HorizontalAlignment="Center" />
+                            <Border Style="{StaticResource Card}" Padding="12,7" MinWidth="110">
+                                <TextBlock Text="{Binding PushToTalkKeyText}" Style="{StaticResource Value}"
+                                           HorizontalAlignment="Center" />
                             </Border>
                             <Button Content="Definir" Command="{Binding BeginKeyCaptureCommand}"
-                                    Padding="16,6" Margin="8,0,0,0" />
+                                    Margin="8,0,0,0" />
                             <TextBlock Text="Pressione a tecla desejada (Esc cancela)…"
-                                       Foreground="#FFE5C07B" FontSize="11" VerticalAlignment="Center"
+                                       Style="{StaticResource TextTiny}"
+                                       Foreground="{StaticResource StatusWarning}" VerticalAlignment="Center"
                                        Margin="10,0,0,0"
                                        Visibility="{Binding IsCapturingKey, Converter={StaticResource BoolToVisibilityConverter}}" />
                         </StackPanel>
@@ -167,14 +202,20 @@
                         <TextBox Text="{Binding MediaPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
 
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                            <Button Content="Verificar portas" Command="{Binding CheckPortsCommand}" Padding="14,5" />
-                            <TextBlock Text="{Binding NetworkWarning}" Foreground="#FFE5C07B" FontSize="11"
+                            <Button Content="Verificar portas" Command="{Binding CheckPortsCommand}" />
+                            <TextBlock Text="{Binding NetworkWarning}"
+                                       Style="{StaticResource TextTiny}"
+                                       Foreground="{StaticResource StatusWarning}"
                                        VerticalAlignment="Center" Margin="10,0,0,0" TextWrapping="Wrap"
                                        Visibility="{Binding NetworkWarning, Converter={StaticResource EmptyToVisibilityConverter}}" />
                         </StackPanel>
 
-                        <Border Background="#FF2A2415" CornerRadius="4" Padding="10" Margin="0,14,0,0">
-                            <TextBlock Foreground="#FFE5C07B" FontSize="11" TextWrapping="Wrap"
+                        <Border Background="{StaticResource NotificationWarning}" CornerRadius="6"
+                                BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1"
+                                Padding="12" Margin="0,18,0,0">
+                            <TextBlock Style="{StaticResource TextTiny}"
+                                       Foreground="{StaticResource StatusWarning}"
+                                       TextWrapping="Wrap"
                                        Text="Aplicar uma porta nova reinicia os serviços de rede: as sessões abertas agora (chat, tela e voz) serão encerradas e a sala será deixada. O processo continua rodando." />
                         </Border>
 
@@ -188,14 +229,17 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
                     <StackPanel Margin="14">
                         <TextBlock Text="Seu fingerprint" Style="{StaticResource Label}" />
-                        <Border Background="#FF232323" CornerRadius="4" Padding="12">
-                            <TextBlock Text="{Binding Fingerprint}" Foreground="#FF9CDCFE"
+                        <Border Style="{StaticResource Card}" Padding="14">
+                            <TextBlock Text="{Binding Fingerprint}"
+                                       Foreground="{StaticResource AccentBlue}"
                                        FontFamily="Consolas" FontSize="13" TextWrapping="Wrap" />
                         </Border>
 
                         <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button Content="Copiar" Command="{Binding CopyFingerprintCommand}" Padding="16,5" />
-                            <TextBlock Text="{Binding FingerprintCopiedText}" Foreground="#FF98C379" FontSize="11"
+                            <Button Content="Copiar" Command="{Binding CopyFingerprintCommand}" />
+                            <TextBlock Text="{Binding FingerprintCopiedText}"
+                                       Style="{StaticResource TextTiny}"
+                                       Foreground="{StaticResource StatusSuccess}"
                                        VerticalAlignment="Center" Margin="10,0,0,0"
                                        Visibility="{Binding FingerprintCopiedText, Converter={StaticResource EmptyToVisibilityConverter}}" />
                         </StackPanel>

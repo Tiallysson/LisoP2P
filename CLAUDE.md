@@ -87,7 +87,16 @@ sitting on the chat column's left edge; every row in it trims by column width ra
 field in `AppSettings`, which is Core. The fase 2 capture test moved off the rail into
 Configurações → Vídeo → Diagnóstico (`SettingsViewModel.OpenCaptureTestCommand`); its window is
 owned by `MainWindow`, not by the modal settings dialog, so closing Configurações does not close
-it. Each settings tab is wrapped in a `ScrollViewer` — the tab content already overflowed the
+it. `DiscordDark.xaml` also carries implicit styles for the stock WPF controls (`Button`, `TextBox`,
+`CheckBox`, `ComboBox`, `ComboBoxItem`, `TabControl`, `TabItem`, `Separator`), because the settings
+and capture-test screens use them directly and their default light chrome is unreadable on the dark
+ground. **Never add an implicit `TextBlock` style here**: it also hits the `TextBlock` that every
+`ContentPresenter` builds inside a control template, which is what once painted near-white text onto
+a light button — the default text colour comes from `TextElement.Foreground` on each view root
+instead. The themed `ComboBox` draws its closed box from `SelectionBoxItem`, which does not honour
+`DisplayMemberPath`, so every `ComboBox` in the app sets an explicit `ItemTemplate`; with
+`DisplayMemberPath` the field falls back to the item's `ToString()`. Each settings tab is wrapped in
+a `ScrollViewer` — the tab content already overflowed the
 620px window.
 
 **Hard constraint:** Core, Net, and Media target plain `net10.0` (no `-windows`) and must never

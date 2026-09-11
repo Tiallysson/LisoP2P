@@ -25,8 +25,13 @@
             <ComboBox Width="280"
                       ItemsSource="{Binding Monitors}"
                       SelectedItem="{Binding SelectedMonitor, Mode=TwoWay}"
-                      DisplayMemberPath="DeviceName"
-                      VerticalAlignment="Center" />
+                      VerticalAlignment="Center">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding DeviceName}" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
 
             <Button Content="Iniciar"
                     Command="{Binding StartCommand}"
@@ -77,8 +82,13 @@
             <ComboBox Width="120"
                       ItemsSource="{x:Static vm:CaptureTestViewModel.ResolutionOptions}"
                       SelectedItem="{Binding SelectedResolution, Mode=TwoWay}"
-                      DisplayMemberPath="Label"
-                      VerticalAlignment="Center" />
+                      VerticalAlignment="Center">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
 
             <TextBlock Text="FPS" Foreground="White" VerticalAlignment="Center" Margin="16,0,8,0" />
             <ComboBox Width="80"
@@ -95,8 +105,13 @@
             <ComboBox Width="140"
                       ItemsSource="{x:Static vm:CaptureTestViewModel.PreviewOptions}"
                       SelectedItem="{Binding SelectedPreview, Mode=TwoWay}"
-                      DisplayMemberPath="Label"
-                      VerticalAlignment="Center" />
+                      VerticalAlignment="Center">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
         </StackPanel>
 
         <Border Grid.Row="2" Background="Black" CornerRadius="4">

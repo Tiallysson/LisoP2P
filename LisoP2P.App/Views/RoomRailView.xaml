@@ -9,7 +9,7 @@
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
-    <Border Background="{StaticResource Surface0}">
+    <Border Background="{StaticResource Surface0}" TextElement.Foreground="{StaticResource TextPrimary}">
         <DockPanel>
 
             <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,8" HorizontalAlignment="Center">

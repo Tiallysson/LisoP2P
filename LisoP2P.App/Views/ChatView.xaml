@@ -66,7 +66,7 @@
         </DataTemplate>
     </UserControl.Resources>
 
-    <Border Background="{StaticResource Surface2}">
+    <Border Background="{StaticResource Surface2}" TextElement.Foreground="{StaticResource TextPrimary}">
         <Grid>
 
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"

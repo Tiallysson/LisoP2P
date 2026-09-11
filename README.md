@@ -108,6 +108,23 @@ mesclado em `App.xaml`. As `UserControl`s não têm nenhuma cor literal — um
 `SessionState`, via um único `SessionStateToBrushConverter` reaproveitado no
 cabeçalho, no card do usuário e no painel de membros.
 
+O tema também **estiliza os controles padrão do WPF** — `Button`, `TextBox`,
+`CheckBox`, `ComboBox` (com a lista suspensa), `TabControl` e `Separator` — por
+estilos implícitos, e não só as views novas. Isso não é enfeite: a tela de
+configurações e a de teste de captura usam esses controles direto, e o chrome
+claro que eles trazem de fábrica ficava ilegível no fundo escuro. Havia um bug
+concreto: um estilo implícito de `TextBlock` com a cor do tema alcançava também
+os `TextBlock` que o `ContentPresenter` cria dentro de cada template de
+controle, pintando texto quase branco sobre botão claro. O estilo implícito de
+`TextBlock` foi removido — a cor padrão agora desce por herança
+(`TextElement.Foreground` na raiz de cada view) e cada template controla o
+próprio texto.
+
+Um detalhe do template de `ComboBox`: a caixa fechada é desenhada a partir de
+`SelectionBoxItem`, que **não** enxerga `DisplayMemberPath`. Os `ComboBox` do app
+usam `ItemTemplate` explícito; com `DisplayMemberPath` o campo mostraria o
+`ToString()` do objeto.
+
 **Ícones: `Segoe Fluent Icons` (com fallback para `Segoe MDL2 Assets`)**, a
 opção 1 da seção 8 do prompt. A fonte já vem no Windows 10/11, então não entra
 arquivo nenhum no publish single-file da fase 6 — o projeto já carrega
