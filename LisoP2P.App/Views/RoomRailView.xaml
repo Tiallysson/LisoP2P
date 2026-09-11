@@ -14,14 +14,8 @@
 
             <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,8" HorizontalAlignment="Center">
                 <Button Style="{StaticResource IconButton}"
-                        Content="{StaticResource IconScreenShare}"
-                        Command="{Binding OpenCaptureTestCommand}"
-                        ToolTip="Teste de captura de tela" />
-
-                <Button Style="{StaticResource IconButton}"
                         Content="{StaticResource IconSettings}"
                         Command="{Binding OpenSettingsCommand}"
-                        Margin="0,4,0,0"
                         ToolTip="Configurações" />
             </StackPanel>
 

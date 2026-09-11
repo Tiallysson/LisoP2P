@@ -24,6 +24,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly IAppShell _shell;
     private readonly IErrorPresenter _errors;
 
+    private CaptureTestWindow? _captureTestWindow;
+
     public ObservableCollection<CaptureAdapterInfo> Monitors { get; } = [];
     public IReadOnlyList<AudioDeviceInfo> InputDevices { get; }
     public IReadOnlyList<AudioDeviceInfo> OutputDevices { get; }
@@ -160,6 +162,29 @@ public sealed partial class SettingsViewModel : ObservableObject
         _discoveryPort = settings.DiscoveryPort;
         _sessionPort = settings.SessionPort;
         _mediaPort = settings.MediaPort;
+    }
+
+    [RelayCommand]
+    private void OpenCaptureTest()
+    {
+        if (_captureTestWindow is not null)
+        {
+            _captureTestWindow.Activate();
+            return;
+        }
+
+        try
+        {
+            var window = _shell.CreateCaptureTestWindow();
+            window.Owner = Application.Current.MainWindow;
+            window.Closed += (_, _) => _captureTestWindow = null;
+            _captureTestWindow = window;
+            window.Show();
+        }
+        catch (Exception ex)
+        {
+            _errors.ShowTransient($"Não foi possível abrir o teste de captura: {ex.Message}", ErrorSeverity.Warning);
+        }
     }
 
     private static BitrateStep Step(string label, int receivers)

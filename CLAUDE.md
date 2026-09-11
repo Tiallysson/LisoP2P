@@ -81,6 +81,15 @@ literal colour in any view), icons are `Segoe Fluent Icons` glyphs exposed as na
 (no icon package — `MaterialDesignThemes` was dropped with it), and `ChatView` is one control for
 both conversation kinds. Only the visual layer changed; Core/Net/Media/Storage were not touched.
 
+The sidebar column opens at 220px and is resizable between 184 and 380 through a `GridSplitter`
+sitting on the chat column's left edge; every row in it trims by column width rather than a fixed
+`MaxWidth`, so it survives the drag. The width is session-only — persisting it would mean a new
+field in `AppSettings`, which is Core. The fase 2 capture test moved off the rail into
+Configurações → Vídeo → Diagnóstico (`SettingsViewModel.OpenCaptureTestCommand`); its window is
+owned by `MainWindow`, not by the modal settings dialog, so closing Configurações does not close
+it. Each settings tab is wrapped in a `ScrollViewer` — the tab content already overflowed the
+620px window.
+
 **Hard constraint:** Core, Net, and Media target plain `net10.0` (no `-windows`) and must never
 reference `System.Windows`. Anything UI-facing needed from Net is exposed via an event/callback,
 never a direct dependency.

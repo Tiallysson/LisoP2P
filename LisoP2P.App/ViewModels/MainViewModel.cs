@@ -38,7 +38,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public bool HasRoom => ActiveRoom is not null;
 
     public event Action? SettingsRequested;
-    public event Action? CaptureTestRequested;
 
     /// <summary>Peers already announced this run, so a reconnect does not re-toast the same id.</summary>
     private readonly HashSet<PeerId> _announcedFingerprints = [];
@@ -160,9 +159,6 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void OpenSettings() => SettingsRequested?.Invoke();
-
-    [RelayCommand]
-    private void OpenCaptureTest() => CaptureTestRequested?.Invoke();
 
     [RelayCommand]
     private void ShowDirectMessages()

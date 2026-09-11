@@ -6,7 +6,7 @@
         xmlns:conv="clr-namespace:LisoP2P.App.Converters"
         mc:Ignorable="d"
         Title="Configurações"
-        Height="560" Width="640"
+        Height="620" Width="640"
         WindowStartupLocation="CenterOwner"
         Background="#FF1B1B1B">
     <Window.Resources>
@@ -45,153 +45,172 @@
 
         <TabControl Background="#FF1B1B1B" BorderThickness="0">
             <TabItem Header="Geral">
-                <StackPanel Margin="14">
-                    <TextBlock Text="Seu nome" Style="{StaticResource Label}" />
-                    <TextBox Text="{Binding Nickname, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                             MaxLength="24" Padding="6,4" />
-                    <TextBlock Style="{StaticResource Hint}"
-                               Text="É só exibição: sua identidade continua sendo a chave, e trocar o nome não derruba sessão nem apaga o histórico. Sessões já abertas veem a mudança na hora; peers novos, na próxima conexão." />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                    <StackPanel Margin="14">
+                        <TextBlock Text="Seu nome" Style="{StaticResource Label}" />
+                        <TextBox Text="{Binding Nickname, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 MaxLength="24" Padding="6,4" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="É só exibição: sua identidade continua sendo a chave, e trocar o nome não derruba sessão nem apaga o histórico. Sessões já abertas veem a mudança na hora; peers novos, na próxima conexão." />
 
-                    <TextBlock Text="Arquivo de configurações" Style="{StaticResource Label}" />
-                    <TextBox Text="{Binding SettingsFilePath, Mode=OneWay}" IsReadOnly="True"
-                             Padding="6,4" FontFamily="Consolas" FontSize="11" />
-                </StackPanel>
+                        <TextBlock Text="Arquivo de configurações" Style="{StaticResource Label}" />
+                        <TextBox Text="{Binding SettingsFilePath, Mode=OneWay}" IsReadOnly="True"
+                                 Padding="6,4" FontFamily="Consolas" FontSize="11" />
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="Vídeo">
-                <StackPanel Margin="14">
-                    <TextBlock Text="Monitor a compartilhar" Style="{StaticResource Label}" />
-                    <ComboBox ItemsSource="{Binding Monitors}"
-                              SelectedItem="{Binding SelectedMonitor, Mode=TwoWay}"
-                              DisplayMemberPath="DeviceName" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                    <StackPanel Margin="14">
+                        <TextBlock Text="Monitor a compartilhar" Style="{StaticResource Label}" />
+                        <ComboBox ItemsSource="{Binding Monitors}"
+                                  SelectedItem="{Binding SelectedMonitor, Mode=TwoWay}"
+                                  DisplayMemberPath="DeviceName" />
 
-                    <TextBlock Text="Resolução de captura" Style="{StaticResource Label}" />
-                    <ComboBox ItemsSource="{Binding Resolutions}"
-                              SelectedItem="{Binding SelectedResolution, Mode=TwoWay}"
-                              DisplayMemberPath="Label" />
-                    <TextBlock Style="{StaticResource Hint}"
-                               Text="A altura é o alvo; a largura acompanha o aspecto do monitor. Codificar na resolução nativa de um monitor 1440p ou 4K derruba o fps." />
+                        <TextBlock Text="Resolução de captura" Style="{StaticResource Label}" />
+                        <ComboBox ItemsSource="{Binding Resolutions}"
+                                  SelectedItem="{Binding SelectedResolution, Mode=TwoWay}"
+                                  DisplayMemberPath="Label" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="A altura é o alvo; a largura acompanha o aspecto do monitor. Codificar na resolução nativa de um monitor 1440p ou 4K derruba o fps." />
 
-                    <TextBlock Text="FPS alvo" Style="{StaticResource Label}" />
-                    <ComboBox ItemsSource="{Binding FpsOptions}"
-                              SelectedItem="{Binding CaptureFps, Mode=TwoWay}" />
+                        <TextBlock Text="FPS alvo" Style="{StaticResource Label}" />
+                        <ComboBox ItemsSource="{Binding FpsOptions}"
+                                  SelectedItem="{Binding CaptureFps, Mode=TwoWay}" />
 
-                    <TextBlock Text="Qualidade por número de receptores (somente leitura)" Style="{StaticResource Label}" />
-                    <Border Background="#FF232323" CornerRadius="4" Padding="10">
-                        <ItemsControl ItemsSource="{Binding BitrateLadderSteps}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,2">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="130" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding Receivers}"
-                                                   Foreground="Gray" FontSize="12" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Quality}"
-                                                   Foreground="#FF9CDCFE" FontSize="12" FontFamily="Consolas" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Border>
-                    <TextBlock Style="{StaticResource Hint}"
-                               Text="O bitrate é escolhido pela quantidade de receptores no momento em que a tela começa a ser compartilhada. Fixar o valor à mão anularia o degrau." />
-                </StackPanel>
+                        <TextBlock Text="Qualidade por número de receptores (somente leitura)" Style="{StaticResource Label}" />
+                        <Border Background="#FF232323" CornerRadius="4" Padding="10">
+                            <ItemsControl ItemsSource="{Binding BitrateLadderSteps}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="130" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Receivers}"
+                                                       Foreground="Gray" FontSize="12" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Quality}"
+                                                       Foreground="#FF9CDCFE" FontSize="12" FontFamily="Consolas" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="O bitrate é escolhido pela quantidade de receptores no momento em que a tela começa a ser compartilhada. Fixar o valor à mão anularia o degrau." />
+
+                        <Separator Margin="0,16,0,10" Background="#FF333333" />
+
+                        <TextBlock Text="Diagnóstico" Style="{StaticResource Label}" />
+                        <Button Content="Abrir teste de captura"
+                                Command="{Binding OpenCaptureTestCommand}"
+                                Padding="14,5" HorizontalAlignment="Left" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Janela separada com preview ao vivo, contadores de fps e bitrate, forçar keyframe, gravação e o log do encoder. É a ferramenta para investigar um problema de captura ou de driver de vídeo, não parte do uso normal." />
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="Áudio">
-                <StackPanel Margin="14">
-                    <TextBlock Text="Dispositivo de entrada" Style="{StaticResource Label}" />
-                    <ComboBox ItemsSource="{Binding InputDevices}"
-                              SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}"
-                              DisplayMemberPath="Name" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                    <StackPanel Margin="14">
+                        <TextBlock Text="Dispositivo de entrada" Style="{StaticResource Label}" />
+                        <ComboBox ItemsSource="{Binding InputDevices}"
+                                  SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}"
+                                  DisplayMemberPath="Name" />
 
-                    <TextBlock Text="Dispositivo de saída" Style="{StaticResource Label}" />
-                    <ComboBox ItemsSource="{Binding OutputDevices}"
-                              SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
-                              DisplayMemberPath="Name" />
-                    <TextBlock Style="{StaticResource Hint}"
-                               Text="A troca de dispositivo vale na hora, inclusive com a voz já ativa." />
+                        <TextBlock Text="Dispositivo de saída" Style="{StaticResource Label}" />
+                        <ComboBox ItemsSource="{Binding OutputDevices}"
+                                  SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}"
+                                  DisplayMemberPath="Name" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="A troca de dispositivo vale na hora, inclusive com a voz já ativa." />
 
-                    <TextBlock Text="Fonte" Style="{StaticResource Label}" />
-                    <ComboBox ItemsSource="{Binding CaptureModes}"
-                              SelectedItem="{Binding AudioMode, Mode=TwoWay}" />
+                        <TextBlock Text="Fonte" Style="{StaticResource Label}" />
+                        <ComboBox ItemsSource="{Binding CaptureModes}"
+                                  SelectedItem="{Binding AudioMode, Mode=TwoWay}" />
 
-                    <CheckBox Content="Usar push-to-talk" IsChecked="{Binding PushToTalkEnabled, Mode=TwoWay}"
-                              Foreground="Gray" Margin="0,14,0,0" />
-                    <TextBlock Style="{StaticResource Hint}"
-                               Text="Desmarcado, o microfone fica aberto enquanto a voz estiver ativa." />
+                        <CheckBox Content="Usar push-to-talk" IsChecked="{Binding PushToTalkEnabled, Mode=TwoWay}"
+                                  Foreground="Gray" Margin="0,14,0,0" />
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Desmarcado, o microfone fica aberto enquanto a voz estiver ativa." />
 
-                    <TextBlock Text="Tecla de push-to-talk" Style="{StaticResource Label}" />
-                    <StackPanel Orientation="Horizontal">
-                        <Border Background="#FF232323" CornerRadius="4" Padding="12,6" MinWidth="110">
-                            <TextBlock Text="{Binding PushToTalkKeyText}" Foreground="White"
-                                       FontSize="13" HorizontalAlignment="Center" />
-                        </Border>
-                        <Button Content="Definir" Command="{Binding BeginKeyCaptureCommand}"
-                                Padding="16,6" Margin="8,0,0,0" />
-                        <TextBlock Text="Pressione a tecla desejada (Esc cancela)…"
-                                   Foreground="#FFE5C07B" FontSize="11" VerticalAlignment="Center"
-                                   Margin="10,0,0,0"
-                                   Visibility="{Binding IsCapturingKey, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        <TextBlock Text="Tecla de push-to-talk" Style="{StaticResource Label}" />
+                        <StackPanel Orientation="Horizontal">
+                            <Border Background="#FF232323" CornerRadius="4" Padding="12,6" MinWidth="110">
+                                <TextBlock Text="{Binding PushToTalkKeyText}" Foreground="White"
+                                           FontSize="13" HorizontalAlignment="Center" />
+                            </Border>
+                            <Button Content="Definir" Command="{Binding BeginKeyCaptureCommand}"
+                                    Padding="16,6" Margin="8,0,0,0" />
+                            <TextBlock Text="Pressione a tecla desejada (Esc cancela)…"
+                                       Foreground="#FFE5C07B" FontSize="11" VerticalAlignment="Center"
+                                       Margin="10,0,0,0"
+                                       Visibility="{Binding IsCapturingKey, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="Rede">
-                <StackPanel Margin="14">
-                    <TextBlock Text="Porta de descoberta (UDP)" Style="{StaticResource Label}" />
-                    <TextBox Text="{Binding DiscoveryPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                    <StackPanel Margin="14">
+                        <TextBlock Text="Porta de descoberta (UDP)" Style="{StaticResource Label}" />
+                        <TextBox Text="{Binding DiscoveryPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
 
-                    <TextBlock Text="Porta de sessão (TCP)" Style="{StaticResource Label}" />
-                    <TextBox Text="{Binding SessionPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
+                        <TextBlock Text="Porta de sessão (TCP)" Style="{StaticResource Label}" />
+                        <TextBox Text="{Binding SessionPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
 
-                    <TextBlock Text="Porta de mídia (UDP)" Style="{StaticResource Label}" />
-                    <TextBox Text="{Binding MediaPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
+                        <TextBlock Text="Porta de mídia (UDP)" Style="{StaticResource Label}" />
+                        <TextBox Text="{Binding MediaPort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
 
-                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                        <Button Content="Verificar portas" Command="{Binding CheckPortsCommand}" Padding="14,5" />
-                        <TextBlock Text="{Binding NetworkWarning}" Foreground="#FFE5C07B" FontSize="11"
-                                   VerticalAlignment="Center" Margin="10,0,0,0" TextWrapping="Wrap"
-                                   Visibility="{Binding NetworkWarning, Converter={StaticResource EmptyToVisibilityConverter}}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                            <Button Content="Verificar portas" Command="{Binding CheckPortsCommand}" Padding="14,5" />
+                            <TextBlock Text="{Binding NetworkWarning}" Foreground="#FFE5C07B" FontSize="11"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" TextWrapping="Wrap"
+                                       Visibility="{Binding NetworkWarning, Converter={StaticResource EmptyToVisibilityConverter}}" />
+                        </StackPanel>
+
+                        <Border Background="#FF2A2415" CornerRadius="4" Padding="10" Margin="0,14,0,0">
+                            <TextBlock Foreground="#FFE5C07B" FontSize="11" TextWrapping="Wrap"
+                                       Text="Aplicar uma porta nova reinicia os serviços de rede: as sessões abertas agora (chat, tela e voz) serão encerradas e a sala será deixada. O processo continua rodando." />
+                        </Border>
+
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="As flags --discovery-port, --session-port e --media-port continuam valendo e têm prioridade sobre este arquivo, para poder rodar duas instâncias na mesma máquina em teste." />
                     </StackPanel>
-
-                    <Border Background="#FF2A2415" CornerRadius="4" Padding="10" Margin="0,14,0,0">
-                        <TextBlock Foreground="#FFE5C07B" FontSize="11" TextWrapping="Wrap"
-                                   Text="Aplicar uma porta nova reinicia os serviços de rede: as sessões abertas agora (chat, tela e voz) serão encerradas e a sala será deixada. O processo continua rodando." />
-                    </Border>
-
-                    <TextBlock Style="{StaticResource Hint}"
-                               Text="As flags --discovery-port, --session-port e --media-port continuam valendo e têm prioridade sobre este arquivo, para poder rodar duas instâncias na mesma máquina em teste." />
-                </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="Identidade">
-                <StackPanel Margin="14">
-                    <TextBlock Text="Seu fingerprint" Style="{StaticResource Label}" />
-                    <Border Background="#FF232323" CornerRadius="4" Padding="12">
-                        <TextBlock Text="{Binding Fingerprint}" Foreground="#FF9CDCFE"
-                                   FontFamily="Consolas" FontSize="13" TextWrapping="Wrap" />
-                    </Border>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+                    <StackPanel Margin="14">
+                        <TextBlock Text="Seu fingerprint" Style="{StaticResource Label}" />
+                        <Border Background="#FF232323" CornerRadius="4" Padding="12">
+                            <TextBlock Text="{Binding Fingerprint}" Foreground="#FF9CDCFE"
+                                       FontFamily="Consolas" FontSize="13" TextWrapping="Wrap" />
+                        </Border>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                        <Button Content="Copiar" Command="{Binding CopyFingerprintCommand}" Padding="16,5" />
-                        <TextBlock Text="{Binding FingerprintCopiedText}" Foreground="#FF98C379" FontSize="11"
-                                   VerticalAlignment="Center" Margin="10,0,0,0"
-                                   Visibility="{Binding FingerprintCopiedText, Converter={StaticResource EmptyToVisibilityConverter}}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button Content="Copiar" Command="{Binding CopyFingerprintCommand}" Padding="16,5" />
+                            <TextBlock Text="{Binding FingerprintCopiedText}" Foreground="#FF98C379" FontSize="11"
+                                       VerticalAlignment="Center" Margin="10,0,0,0"
+                                       Visibility="{Binding FingerprintCopiedText, Converter={StaticResource EmptyToVisibilityConverter}}" />
+                        </StackPanel>
+
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,12,0,0"
+                                   Text="É o SHA-256 da sua chave pública. Quando alguém conecta com você, o app mostra o fingerprint dele numa notificação — leiam os dois em voz alta numa chamada para confirmar que são quem dizem ser. Nada é bloqueado se não conferir: esta fase é verificação por transparência, não aprovação obrigatória." />
+
+                        <TextBlock Text="Chave pública (PeerId)" Style="{StaticResource Label}" />
+                        <TextBox Text="{Binding PeerIdText, Mode=OneWay}" IsReadOnly="True"
+                                 Padding="6,4" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" />
+
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="A chave privada fica protegida pelo DPAPI do Windows, em identity.json, e nunca sai desta máquina. Apagar esse arquivo cria uma identidade nova e você passa a ser outro contato para quem já te conhecia." />
                     </StackPanel>
-
-                    <TextBlock Style="{StaticResource Hint}" Margin="0,12,0,0"
-                               Text="É o SHA-256 da sua chave pública. Quando alguém conecta com você, o app mostra o fingerprint dele numa notificação — leiam os dois em voz alta numa chamada para confirmar que são quem dizem ser. Nada é bloqueado se não conferir: esta fase é verificação por transparência, não aprovação obrigatória." />
-
-                    <TextBlock Text="Chave pública (PeerId)" Style="{StaticResource Label}" />
-                    <TextBox Text="{Binding PeerIdText, Mode=OneWay}" IsReadOnly="True"
-                             Padding="6,4" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" />
-
-                    <TextBlock Style="{StaticResource Hint}"
-                               Text="A chave privada fica protegida pelo DPAPI do Windows, em identity.json, e nunca sai desta máquina. Apagar esse arquivo cria uma identidade nova e você passa a ser outro contato para quem já te conhecia." />
-                </StackPanel>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
     </DockPanel>

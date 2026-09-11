@@ -60,7 +60,7 @@
 
                     <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
                         <Button Style="{StaticResource FlatButton}" HorizontalAlignment="Stretch"
-                                Content="Convidar peer"
+                                Content="Convidar peer selecionado"
                                 Command="{Binding InviteSelectedPeerCommand}"
                                 ToolTip="Convida o peer marcado em Mensagens diretas" />
 
@@ -75,8 +75,14 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Background="Transparent" Padding="6,3" CornerRadius="4" Margin="0,1">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Grid Width="26" Height="26" Margin="0,0,8,0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Grid Grid.Column="0" Width="26" Height="26" Margin="0,0,8,0">
                                                 <Border Style="{StaticResource Avatar22}">
                                                     <TextBlock Text="{Binding Initials}"
                                                                Style="{StaticResource AvatarInitials}" FontSize="10" />
@@ -85,18 +91,19 @@
                                                         Width="26" Height="26" CornerRadius="13" />
                                             </Grid>
 
-                                            <TextBlock Text="{Binding DisplayName}" Style="{StaticResource TextSmall}"
+                                            <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
+                                                       Style="{StaticResource TextSmall}"
                                                        VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis" MaxWidth="104"
+                                                       TextTrimming="CharacterEllipsis"
                                                        ToolTip="{Binding DisplayName}" />
 
-                                            <TextBlock Style="{StaticResource IconGlyph}"
+                                            <TextBlock Grid.Column="2" Style="{StaticResource IconGlyph}"
                                                        Text="{StaticResource IconScreenShare}"
                                                        Foreground="{StaticResource AccentBlue}"
                                                        Margin="6,0,0,0" FontSize="12"
                                                        ToolTip="Compartilhando a tela"
                                                        Visibility="{Binding IsSharingScreen, Converter={StaticResource BoolToVis}}" />
-                                        </StackPanel>
+                                        </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -162,19 +169,25 @@
                              Style="{StaticResource PlainListBox}">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal">
-                                    <Border Style="{StaticResource Avatar22}" Margin="0,0,8,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource Avatar22}" Margin="0,0,8,0">
                                         <TextBlock Text="{Binding Nickname, Converter={StaticResource ToInitials}}"
                                                    Style="{StaticResource AvatarInitials}" FontSize="10" />
                                     </Border>
 
-                                    <StackPanel VerticalAlignment="Center">
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding Nickname}" Style="{StaticResource TextSmall}"
                                                    Foreground="{StaticResource TextPrimary}"
-                                                   TextTrimming="CharacterEllipsis" MaxWidth="118" />
-                                        <TextBlock Text="{Binding Address}" Style="{StaticResource TextTiny}" />
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Address}" Style="{StaticResource TextTiny}"
+                                                   TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
-                                </StackPanel>
+                                </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -184,36 +197,35 @@
             <Border Grid.Row="2" Background="{StaticResource Surface0}" Padding="8,6">
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <Grid Width="32" Height="32" Margin="0,0,8,0">
-                            <Border Style="{StaticResource Avatar32}" Background="{StaticResource AccentBlue}">
-                                <TextBlock Text="{Binding Nickname, Converter={StaticResource ToInitials}}"
-                                           Style="{StaticResource AvatarInitials}" FontSize="12" />
-                            </Border>
+                    <Grid Grid.Column="0" Width="32" Height="32" Margin="0,0,8,0">
+                        <Border Style="{StaticResource Avatar32}" Background="{StaticResource AccentBlue}">
+                            <TextBlock Text="{Binding Nickname, Converter={StaticResource ToInitials}}"
+                                       Style="{StaticResource AvatarInitials}" FontSize="12" />
+                        </Border>
 
-                            <Border Width="10" Height="10" CornerRadius="5"
-                                    HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                    BorderBrush="{StaticResource Surface0}" BorderThickness="2"
-                                    Background="{Binding ActiveConversation.ConnectionState, Converter={StaticResource StateToDot}}" />
-                        </Grid>
+                        <Border Width="10" Height="10" CornerRadius="5"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                BorderBrush="{StaticResource Surface0}" BorderThickness="2"
+                                Background="{Binding ActiveConversation.ConnectionState, Converter={StaticResource StateToDot}}" />
+                    </Grid>
 
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Nickname}" Style="{StaticResource TextSmall}"
-                                       Foreground="{StaticResource TextPrimary}" FontWeight="SemiBold"
-                                       TextTrimming="CharacterEllipsis" MaxWidth="74"
-                                       ToolTip="{Binding Fingerprint}" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Nickname}" Style="{StaticResource TextSmall}"
+                                   Foreground="{StaticResource TextPrimary}" FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding Fingerprint}" />
 
-                            <TextBlock Style="{StaticResource TextTiny}" MaxWidth="74"
-                                       TextTrimming="CharacterEllipsis"
-                                       Text="{Binding ActiveConversation.SubtitleText, FallbackValue='Ocioso', TargetNullValue='Ocioso'}" />
-                        </StackPanel>
+                        <TextBlock Style="{StaticResource TextTiny}"
+                                   TextTrimming="CharacterEllipsis"
+                                   Text="{Binding ActiveConversation.SubtitleText, FallbackValue='Ocioso', TargetNullValue='Ocioso'}" />
                     </StackPanel>
 
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                         <Button Command="{Binding ToggleMuteCommand}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource ToggleIconButton}">

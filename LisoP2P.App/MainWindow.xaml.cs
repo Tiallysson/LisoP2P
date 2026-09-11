@@ -12,7 +12,6 @@ public partial class MainWindow : Window
 {
     private readonly IAppShell _shell;
     private MainViewModel _viewModel;
-    private CaptureTestWindow? _captureWindow;
     private SettingsWindow? _settingsWindow;
     private bool _pushToTalkHeld;
 
@@ -38,13 +37,11 @@ public partial class MainWindow : Window
     {
         DataContext = _viewModel;
         _viewModel.SettingsRequested += OpenSettings;
-        _viewModel.CaptureTestRequested += OpenCaptureTest;
     }
 
     private void Unbind()
     {
         _viewModel.SettingsRequested -= OpenSettings;
-        _viewModel.CaptureTestRequested -= OpenCaptureTest;
     }
 
     private void OnShellRebuilt()
@@ -104,20 +101,6 @@ public partial class MainWindow : Window
         }
 
         return PushToTalkKeys.Matches(expected, key);
-    }
-
-    private void OpenCaptureTest()
-    {
-        if (_captureWindow is not null)
-        {
-            _captureWindow.Activate();
-            return;
-        }
-
-        _captureWindow = _shell.CreateCaptureTestWindow();
-        _captureWindow.Owner = this;
-        _captureWindow.Closed += (_, _) => _captureWindow = null;
-        _captureWindow.Show();
     }
 
     private void OpenSettings()

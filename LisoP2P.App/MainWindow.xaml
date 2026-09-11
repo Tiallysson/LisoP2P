@@ -22,7 +22,7 @@
         <Grid Grid.Row="0">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="56" />
-            <ColumnDefinition Width="184" />
+            <ColumnDefinition Width="220" MinWidth="184" MaxWidth="380" />
             <ColumnDefinition Width="*" MinWidth="320" />
             <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
@@ -30,6 +30,13 @@
         <views:RoomRailView Grid.Column="0" />
         <views:RoomSidebarView Grid.Column="1" />
         <views:ChatView Grid.Column="2" DataContext="{Binding ActiveConversation}" />
+
+        <GridSplitter Grid.Column="2" Width="5" HorizontalAlignment="Left"
+                      VerticalAlignment="Stretch"
+                      Background="Transparent"
+                      ResizeBehavior="PreviousAndCurrent" ResizeDirection="Columns"
+                      Panel.ZIndex="5"
+                      ToolTip="Arraste para redimensionar o painel" />
 
         <views:MemberPanelView Grid.Column="3" Width="168"
                                Visibility="{Binding IsMemberPanelVisible, Converter={StaticResource BoolToVis}}" />

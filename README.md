@@ -54,15 +54,20 @@ A janela principal é um grid de quatro colunas fixas mais a coluna de chat
 flexível, conforme `LisoP2P.App/Docs/frontend-wpf-discord-prompt.md`:
 
 ```
-[ Rail 56px ] [ Painel lateral 184px ] [ Chat central * ] [ Membros 168px ]
+[ Rail 56px ] [ Painel lateral 220px ] [ Chat central * ] [ Membros 168px ]
 ```
+
+O painel lateral abre em 220px e é **redimensionável**: um `GridSplitter` na
+borda com o chat aceita de 184 a 380px, e o conteúdo acompanha — nome, endereço
+e status truncam pela largura da coluna, não por um `MaxWidth` fixo. A largura
+vale para a sessão; não é gravada em `settings.json`, que é território do
+`AppSettings` em `Core` e está fora do escopo desta camada.
 
 ![Mensagens diretas](docs/frontend-mensagens-diretas.png)
 
 O **rail** tem o botão de mensagens diretas no topo, os avatares de sala
 (iniciais em círculo, com a barra vertical de 4px indicando o item ativo), o
-botão "+" de criar sala e, fixos no rodapé, o teste de captura e as
-configurações.
+botão "+" de criar sala e, fixa no rodapé, a engrenagem de configurações.
 
 O **painel lateral** muda de conteúdo conforme o rail: em mensagens diretas
 lista os peers descobertos e o campo de conectar manualmente; numa sala mostra
@@ -163,8 +168,10 @@ para rodar duas instâncias na mesma máquina sem elas colidirem).
 
 ## Captura de tela (fase 2)
 
-O botão **Teste de captura**, no rodapé do rail da janela principal,
-abre uma janela separada do chat com: seletor de monitor, iniciar/parar,
+O teste de captura fica em **Configurações → Vídeo → Diagnóstico**, no botão
+**Abrir teste de captura**: é ferramenta de investigação, não parte do uso
+normal, e por isso saiu da tela principal. Ele abre uma janela separada do chat
+com: seletor de monitor, iniciar/parar,
 "forçar keyframe", "abrir log", "abrir gravação", preview ao vivo, contadores
 em tempo real (fps capturado, fps codificado, bitrate real, frames
 descartados, encoder ativo) e os controles de encode: resolução (720p, 1080p
